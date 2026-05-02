@@ -1,0 +1,131 @@
+const express = require('express');
+const { chromium } = require('playwright');
+
+const app = express();
+app.use(express.json({ limit: '1mb' }));
+
+const HOST = process.env.HOST || '0.0.0.0';
+const PORT = parseInt(process.env.PORT || '3007', 10);
+const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9222';
+
+async function getPage() {
+  let browser;
+  try {
+    browser = await chromium.connectOverCDP(CDP_URL);
+  } catch (err) {
+    throw new Error(
+      `Cannot connect to Chrome at ${CDP_URL}. ` +
+      `Make sure Chrome is running with --remote-debugging-port=9222 ` +
+      `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
+    );
+  }
+
+  const context = browser.contexts()[0];
+  if (!context) {
+    throw new Error('No browser context found. Open at least one tab in Chrome.');
+  }
+
+  const pages = context.pages().filter(p => !p.isClosed());
+  const page = pages[0] || await context.newPage();
+
+  page.setDefaultTimeout(15000);
+
+  return page;
+}
+
+app.get('/health', async (req, res) => {
+  try {
+    await getPage();
+    res.json({ status: 'ok' });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.post('/goto', async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'Missing url' });
+
+    const page = await getPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    res.json({ success: true, url: page.url() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/content', async (req, res) => {
+  try {
+    const page = await getPage();
+    res.send(await page.content());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/screenshot', async (req, res) => {
+  try {
+    const page = await getPage();
+
+    const buffer = await page.screenshot({
+      fullPage: false,
+      timeout: 15000,
+      animations: 'disabled',
+      caret: 'hide'
+    });
+
+    res.set('Content-Type', 'image/png');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/click', async (req, res) => {
+  try {
+    const { selector } = req.body || {};
+    if (!selector) return res.status(400).json({ error: 'Missing selector' });
+
+    const page = await getPage();
+    await page.click(selector);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/type', async (req, res) => {
+  try {
+    const { selector, text } = req.body || {};
+    if (!selector) return res.status(400).json({ error: 'Missing selector' });
+
+    const page = await getPage();
+    await page.fill(selector, text || '');
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/press', async (req, res) => {
+  try {
+    const { key } = req.body || {};
+    if (!key) return res.status(400).json({ error: 'Missing key' });
+
+    const page = await getPage();
+    await page.keyboard.press(key);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, HOST, () => {
+  console.log(`Chrome Agent Bridge gateway listening on http://${HOST}:${PORT}`);
+  console.log(`Connecting to Chrome via CDP at ${CDP_URL}`);
+});

@@ -1,0 +1,27 @@
+{
+  "name": "chrome-agent-bridge",
+  "version": "0.1.0",
+  "description": "HTTP gateway that lets AI agents control a real logged-in Chrome browser on a Windows 11 PC over a private network.",
+  "main": "gateway/index.js",
+  "scripts": {
+    "start": "node gateway/index.js",
+    "dev": "node gateway/index.js"
+  },
+  "keywords": [
+    "chrome",
+    "playwright",
+    "browser-automation",
+    "ai-agent",
+    "tailscale",
+    "cdp",
+    "remote-debugging"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright": "^1.45.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

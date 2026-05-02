@@ -1,0 +1,18 @@
+node_modules/
+.env
+*.log
+
+# Screenshots / image artifacts produced by the gateway
+*.png
+*.jpg
+*.jpeg
+*.webp
+screenshots/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
