@@ -219,4 +219,4 @@ Common issues and fixes are in
 
 ## License
 
-[MIT](LICENSE) — Copyright (c) 2026 Chrome Agent Bridge contributors.
+[MIT](LICENSE) — Copyright (c) 2026 Michael Zelbel.
