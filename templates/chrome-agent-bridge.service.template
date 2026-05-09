@@ -1,0 +1,22 @@
+[Unit]
+Description=Chrome Agent Bridge (Express gateway + Chrome with remote debugging)
+Documentation=https://github.com/MichaelZelbel/chrome-agent-bridge
+After=graphical-session.target network-online.target
+Wants=network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart={{LAUNCHER_PATH}}
+Restart=on-failure
+RestartSec=10s
+# Capture logs to journal (view with `journalctl --user -u chrome-agent-bridge -f`)
+StandardOutput=journal
+StandardError=journal
+
+# Reasonable resource caps. Chrome dominates RAM; the gateway itself is tiny.
+MemoryMax=4G
+CPUQuota=200%
+
+[Install]
+WantedBy=default.target

@@ -2,11 +2,17 @@
 
 > Control a real logged-in Chrome browser from AI agents over a private network.
 
-A small HTTP gateway that runs on a Windows 11 PC and exposes a handful of
-safe browser actions to remote AI agents. The agents drive a real Chrome
-window — with your real, persistent logins — so they can use sites that
-block headless browsers or require authentication (LinkedIn, Discord,
-internal dashboards, etc.).
+A small HTTP gateway that runs on **Windows, macOS, or Linux** and exposes
+a handful of safe browser actions to remote AI agents. The agents drive a
+real Chrome window — with your real, persistent logins — so they can use
+sites that block headless browsers or require authentication (LinkedIn,
+Discord, internal dashboards, etc.).
+
+**Platform support:**
+
+- **Windows 10 / 11** (x64 and ARM64) — `.bat` launcher + Task Scheduler auto-start
+- **macOS 12 (Monterey) or newer** (Intel and Apple Silicon) — POSIX shell launcher + launchd LaunchAgent auto-start
+- **Linux** with systemd (Ubuntu 22.04+, Fedora, Arch, Debian 12+, etc.) — POSIX shell launcher + systemd-user auto-start
 
 This is **not** a CDP endpoint exposed to the network. Chrome's remote
 debugging port is bound to `127.0.0.1` only. The gateway is the **only**
@@ -21,7 +27,7 @@ surface that listens on the private network.
                │
                │   private network (e.g. Tailscale)
                ▼
-        Windows 11 PC
+   Your laptop  (Windows / macOS / Linux)
                │
                │   local HTTP gateway  (0.0.0.0:3007)
                ▼
@@ -79,42 +85,97 @@ See [`docs/security.md`](docs/security.md) for the full threat model.
 
 ## Quick start
 
-On the Windows 11 PC:
+Pick your OS. Each path: clone, install deps, run launcher (manual), then optionally install auto-start so the bridge survives reboots.
+
+### Windows 10 / 11
 
 ```powershell
-git clone https://github.com/<YOUR_GITHUB_USERNAME>/chrome-agent-bridge.git
+git clone https://github.com/MichaelZelbel/chrome-agent-bridge.git
 cd chrome-agent-bridge
 npm install
 scripts\start-chrome-agent-bridge.bat
 ```
 
-This launches Chrome (with CDP bound to `127.0.0.1:9222` and a dedicated
-profile at `%LOCALAPPDATA%\ChromeAgentProfile`), waits 5 seconds, then
-starts the gateway on `http://0.0.0.0:3007`.
+Auto-start (run once; sets up a Task Scheduler entry triggered at user logon, with restart-on-failure):
 
-Log into the sites you need inside the dedicated Chrome window once.
-Sessions persist across restarts.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-autostart-windows.ps1
+```
+
+Profile lives at `%LOCALAPPDATA%\ChromeAgentProfile`.
+
+### macOS 12+
+
+```bash
+git clone https://github.com/MichaelZelbel/chrome-agent-bridge.git
+cd chrome-agent-bridge
+npm install
+chmod +x scripts/start-chrome-agent-bridge.sh
+./scripts/start-chrome-agent-bridge.sh
+```
+
+Auto-start (run once; installs a launchd LaunchAgent with `KeepAlive` for crash recovery):
+
+```bash
+bash scripts/install-autostart-macos.sh
+```
+
+Profile lives at `~/Library/Application Support/ChromeAgentProfile`.
+
+### Linux (Ubuntu 22.04+, Fedora, Arch, Debian 12+ — anything with systemd)
+
+```bash
+git clone https://github.com/MichaelZelbel/chrome-agent-bridge.git
+cd chrome-agent-bridge
+npm install
+chmod +x scripts/start-chrome-agent-bridge.sh
+./scripts/start-chrome-agent-bridge.sh
+```
+
+Auto-start (run once; installs a systemd user unit with `Restart=on-failure`):
+
+```bash
+bash scripts/install-autostart-linux.sh
+```
+
+Profile lives at `~/.local/share/chrome-agent-profile`.
+
+The installer asks (via sudo) to enable `loginctl enable-linger` so the gateway survives logout — important for headless laptops, optional for daily-use machines.
+
+---
+
+### Verify (any OS)
+
+The launcher starts Chrome with CDP bound to `127.0.0.1:9222` and a dedicated profile, waits 5 seconds, then starts the gateway on `http://0.0.0.0:3007`. Log into the sites you need inside the dedicated Chrome window **once** — sessions persist across restarts.
 
 From any other machine on the same private network:
 
 ```bash
-curl http://<YOUR_WINDOWS_TAILSCALE_IP>:3007/health
+curl http://<YOUR_LAPTOP_TAILSCALE_IP>:3007/health
 # => {"status":"ok"}
 ```
 
 ---
 
-## Windows setup
+## Per-OS setup details
 
-Detailed step-by-step in [`docs/setup-windows.md`](docs/setup-windows.md):
+- **Windows:** [`docs/setup-windows.md`](docs/setup-windows.md)
+- **macOS / Linux:** the launcher auto-detects Chrome / Chromium in standard install locations. Override with `CHROME_BIN_OVERRIDE=/path/to/chrome` if you have it elsewhere.
 
-1. Install Node.js LTS and Google Chrome.
-2. Clone the repo.
-3. `npm install`.
-4. Run `scripts\start-chrome-agent-bridge.bat`.
-5. Log into your target sites in the dedicated Chrome window.
-6. (Optional) Drop a shortcut to the batch file in `shell:startup` so the
-   bridge runs on login.
+### Uninstalling auto-start
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts\uninstall-autostart-windows.ps1
+```
+
+```bash
+# macOS
+bash scripts/uninstall-autostart-macos.sh
+
+# Linux
+bash scripts/uninstall-autostart-linux.sh
+```
 
 ---
 
