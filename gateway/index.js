@@ -69,11 +69,14 @@ app.get('/screenshot', async (req, res) => {
   try {
     const page = await getPage();
 
+    // Minimal screenshot config -- newer Playwright (1.50+) is strict
+    // about page-stability when `animations: 'disabled'` is set and hangs
+    // indefinitely on sites with continuous JS animations (LinkedIn feed,
+    // Discord realtime, etc). Default behaviour without these options
+    // returns immediately on the current viewport state.
     const buffer = await page.screenshot({
       fullPage: false,
-      timeout: 15000,
-      animations: 'disabled',
-      caret: 'hide'
+      timeout: 8000
     });
 
     res.set('Content-Type', 'image/png');
