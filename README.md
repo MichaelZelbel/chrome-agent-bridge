@@ -114,6 +114,18 @@ cd chrome-agent-bridge && npm install && bash scripts/install-autostart-linux.sh
 
 ---
 
+## Reset / uninstall on Windows (one-liner)
+
+To wipe the bridge from a Windows PC so the next `setup.bat` install looks like a fresh machine — task scheduler entry gone, port 3007 + 3008 freed, default bridge folder removed, optional Chrome-profile wipe:
+
+```powershell
+irm https://raw.githubusercontent.com/MichaelZelbel/chrome-agent-bridge/main/scripts/reset-bridge.ps1 | iex
+```
+
+Runs as your user (no admin needed). Prompts for the Chrome-profile wipe so logged-in sessions aren't lost by accident. Idempotent. Touches nothing outside the bridge (leaves Tailscale, Node.js, Chrome, your shell config alone).
+
+---
+
 ## Quick start (manual)
 
 Pick your OS. Each path: clone, install deps, run launcher (manual), then optionally install auto-start so the bridge survives reboots.
