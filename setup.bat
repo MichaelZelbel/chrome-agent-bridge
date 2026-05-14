@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================================
-REM Chrome Agent Bridge — Windows double-click installer
+REM Chrome Agent Bridge -- Windows double-click installer
 REM
 REM Wraps scripts\windows-easy-install.ps1 so the user can just double-click
 REM this file in Explorer instead of right-clicking the .ps1 and choosing
@@ -18,7 +18,7 @@ cd /d "%~dp0"
 
 echo.
 echo Launching Chrome Agent Bridge installer...
-echo If Windows asks "Do you want to allow this app to make changes?" — click Yes.
+echo If Windows asks "Do you want to allow this app to make changes?" -- click Yes.
 echo.
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows-easy-install.ps1"

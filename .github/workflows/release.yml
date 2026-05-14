@@ -76,12 +76,24 @@ jobs:
           # since the repo stores them with LF normalization handled by
           # .gitattributes; for Windows files we want CRLF in the archive.
           # Convert in place inside the staged tree before zipping.
-          if command -v unix2dos >/dev/null 2>&1; then
-            find "$STAGE" -type f \( -name '*.bat' -o -name '*.ps1' \) -exec unix2dos -q {} \;
-          else
+          if ! command -v unix2dos >/dev/null 2>&1; then
             sudo apt-get update -qq && sudo apt-get install -y -qq dos2unix
-            find "$STAGE" -type f \( -name '*.bat' -o -name '*.ps1' \) -exec unix2dos -q {} \;
           fi
+          find "$STAGE" -type f \( -name '*.bat' -o -name '*.ps1' \) -exec unix2dos -q {} \;
+          # Prepend UTF-8 BOM to all .ps1 files so Windows PowerShell 5.1
+          # (the default on Win10/11) reads them as UTF-8 instead of the
+          # local ANSI code page. Without the BOM, any non-ASCII character
+          # (em-dash, accented letters, etc) gets mojibake'd and can crash
+          # the parser with cryptic "unexpected token" errors. Idempotent —
+          # if a file already starts with the BOM, we skip it.
+          find "$STAGE" -type f -name '*.ps1' | while read -r f; do
+            if ! head -c 3 "$f" | grep -q $'\xef\xbb\xbf'; then
+              tmp="$(mktemp)"
+              printf '\xef\xbb\xbf' > "$tmp"
+              cat "$f" >> "$tmp"
+              mv "$tmp" "$f"
+            fi
+          done
           ( cd "$(dirname "$STAGE")" && zip -rq "$GITHUB_WORKSPACE/$OUT" "$(basename "$STAGE")" )
           echo "WINDOWS_ASSET=$OUT" >> "$GITHUB_ENV"
 

@@ -1,11 +1,11 @@
 # =============================================================================
-# Chrome Agent Bridge — Windows Easy Install
+# Chrome Agent Bridge -- Windows Easy Install
 #
 # One-shot installer for non-technical users. Handles every step end-to-end:
 #   1. Verifies Windows 10/11
 #   2. Installs Node.js via winget if missing (or points the user to nodejs.org
 #      if winget isn't available on this Windows build)
-#   3. Verifies Chrome is present (warns but continues if missing — the user
+#   3. Verifies Chrome is present (warns but continues if missing -- the user
 #      can install it later)
 #   4. Either uses the repo this script is part of (the normal case: user
 #      extracted a release ZIP and double-clicked setup.bat), OR clones the
@@ -17,7 +17,7 @@
 # Triggered either by double-clicking setup.bat OR by running directly:
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-easy-install.ps1
 #
-# Idempotent — safe to re-run.
+# Idempotent -- safe to re-run.
 # =============================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -31,7 +31,7 @@ function Write-Fail    { param($msg) Write-Host "[ fail  ] $msg" -ForegroundColo
 # Banner ------------------------------------------------------------------------
 Write-Host ""
 Write-Host "===================================================================" -ForegroundColor Cyan
-Write-Host " Chrome Agent Bridge — Windows Easy Install" -ForegroundColor Cyan
+Write-Host " Chrome Agent Bridge -- Windows Easy Install" -ForegroundColor Cyan
 Write-Host "===================================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -103,7 +103,7 @@ foreach ($p in $chromePaths) {
 if (-not $chromeFound) {
     Write-Warn "Chrome not detected in standard locations."
     Write-Warn "The bridge needs Chrome to work. Install it from https://www.google.com/chrome/"
-    Write-Warn "You can continue this install — the bridge will work once Chrome is installed."
+    Write-Warn "You can continue this install -- the bridge will work once Chrome is installed."
     Write-Host ""
     $continue = Read-Host "Continue without Chrome? (y/n)"
     if ($continue -ne 'y' -and $continue -ne 'Y') { exit 0 }
@@ -121,7 +121,7 @@ if ($RepoCandidate -and (Test-Path "$RepoCandidate\package.json") -and (Test-Pat
     Write-Step "No local bridge sources next to this script. Cloning from GitHub..."
     $RepoRoot = Join-Path $env:USERPROFILE 'chrome-agent-bridge'
     if (Test-Path $RepoRoot) {
-        Write-Step "Existing checkout at $RepoRoot — pulling latest"
+        Write-Step "Existing checkout at $RepoRoot -- pulling latest"
         Push-Location $RepoRoot
         try {
             & git pull --ff-only
@@ -132,7 +132,7 @@ if ($RepoCandidate -and (Test-Path "$RepoCandidate\package.json") -and (Test-Pat
         if (-not $git) {
             $winget = Get-Command winget -ErrorAction SilentlyContinue
             if ($winget) {
-                Write-Step "git not found — installing via winget..."
+                Write-Step "git not found -- installing via winget..."
                 & winget install --id Git.Git --silent --accept-source-agreements --accept-package-agreements | Out-Null
                 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
             } else {
@@ -188,7 +188,7 @@ for ($i = 1; $i -le 15; $i++) {
         $resp = Invoke-RestMethod -Uri 'http://127.0.0.1:3007/health' -TimeoutSec 3 -ErrorAction Stop
         if ($resp.status -eq 'ok') { $ok = $true; break }
     } catch {
-        # not ready yet — keep polling
+        # not ready yet -- keep polling
     }
 }
 
@@ -205,7 +205,7 @@ if ($ok) {
     Write-Host "Next steps (one-time, on the Chrome window that just opened):"
     Write-Host "  1. Log into the sites your agent should be able to use"
     Write-Host "     (LinkedIn, Discord, GitHub, internal dashboards, ...)."
-    Write-Host "  2. These logins persist across reboots — they live in the bridge's"
+    Write-Host "  2. These logins persist across reboots -- they live in the bridge's"
     Write-Host "     dedicated Chrome profile, separate from your everyday browser."
     Write-Host ""
     Write-Host "Your agent on the VPS can now reach the bridge via Tailscale at:"
@@ -213,7 +213,7 @@ if ($ok) {
     Write-Host ""
 } else {
     Write-Warn "Gateway didn't respond on http://127.0.0.1:3007/health within 30s."
-    Write-Warn "The Task Scheduler entry is registered — try opening a NEW PowerShell"
+    Write-Warn "The Task Scheduler entry is registered -- try opening a NEW PowerShell"
     Write-Warn "window in ~30 seconds and running:"
     Write-Warn "  Invoke-RestMethod http://127.0.0.1:3007/health"
     Write-Warn ""
