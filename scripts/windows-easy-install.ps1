@@ -152,10 +152,15 @@ if ($RepoCandidate -and (Test-Path "$RepoCandidate\package.json") -and (Test-Pat
 }
 
 # 5. npm install ---------------------------------------------------------------
+# Invoking npm via `& npm install ...` on Windows PowerShell 5.1 against
+# the npm.cmd shim has a known argument-passing wart on some Win11 + npm 11
+# setups -- npm sees a mangled first arg (e.g. "pm" instead of "install").
+# `cmd /c` delegates parsing to cmd.exe which handles .cmd shims natively,
+# avoiding PowerShell's external-command quoting quirks.
 Write-Step "Installing Node.js dependencies (this can take 1-2 minutes)..."
 Push-Location $RepoRoot
 try {
-    & npm install --silent --no-audit --no-fund
+    & cmd.exe /c "npm install --silent --no-audit --no-fund"
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "npm install failed (exit code $LASTEXITCODE)."
         Read-Host "Press Enter to exit"
