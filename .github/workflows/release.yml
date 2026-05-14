@@ -1,0 +1,131 @@
+name: Release
+
+# Builds and publishes platform-specific release archives whenever a tag
+# matching v*.*.* is pushed. End users download these from the GitHub Releases
+# page and run the bundled easy-install script.
+#
+# - Windows: ZIP archive (preserves \r\n line endings on .bat / .ps1)
+# - macOS:   tar.gz (preserves executable bit on .command / .sh files —
+#            critical, otherwise Finder opens them in TextEdit on double-click)
+# - Linux:   tar.gz (preserves executable bit)
+#
+# The job runs on Linux for all three since we're just packaging files.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage release tree
+        run: |
+          set -euo pipefail
+          STAGE="$(mktemp -d)/chrome-agent-bridge"
+          mkdir -p "$STAGE"
+          # Copy repo contents EXCEPT git metadata, node_modules, and the
+          # workflows directory itself (end users don't need it).
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='node_modules' \
+            --exclude='*.log' \
+            ./ "$STAGE/"
+
+          # Ensure executable bit on entry points (rsync preserves them, but
+          # belt-and-suspenders — these MUST be +x or macOS Finder opens
+          # them in a text editor on double-click).
+          chmod +x "$STAGE/setup.command" 2>/dev/null || true
+          chmod +x "$STAGE/scripts/macos-easy-install.command" 2>/dev/null || true
+          chmod +x "$STAGE/scripts/start-chrome-agent-bridge.sh" 2>/dev/null || true
+          chmod +x "$STAGE/scripts/install-autostart-macos.sh" 2>/dev/null || true
+          chmod +x "$STAGE/scripts/install-autostart-linux.sh" 2>/dev/null || true
+          chmod +x "$STAGE/scripts/uninstall-autostart-macos.sh" 2>/dev/null || true
+          chmod +x "$STAGE/scripts/uninstall-autostart-linux.sh" 2>/dev/null || true
+
+          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
+          echo "TAG=${{ steps.version.outputs.tag }}" >> "$GITHUB_ENV"
+
+      - name: Build Windows ZIP
+        run: |
+          set -euo pipefail
+          OUT="chrome-agent-bridge-windows-${TAG}.zip"
+          # ZIP preserves Windows line endings (\r\n) in .bat / .ps1 files
+          # since the repo stores them with LF normalization handled by
+          # .gitattributes; for Windows files we want CRLF in the archive.
+          # Convert in place inside the staged tree before zipping.
+          if command -v unix2dos >/dev/null 2>&1; then
+            find "$STAGE" -type f \( -name '*.bat' -o -name '*.ps1' \) -exec unix2dos -q {} \;
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq dos2unix
+            find "$STAGE" -type f \( -name '*.bat' -o -name '*.ps1' \) -exec unix2dos -q {} \;
+          fi
+          ( cd "$(dirname "$STAGE")" && zip -rq "$GITHUB_WORKSPACE/$OUT" "$(basename "$STAGE")" )
+          echo "WINDOWS_ASSET=$OUT" >> "$GITHUB_ENV"
+
+      - name: Build macOS tar.gz
+        run: |
+          set -euo pipefail
+          OUT="chrome-agent-bridge-macos-${TAG}.tar.gz"
+          ( cd "$(dirname "$STAGE")" && tar -czf "$GITHUB_WORKSPACE/$OUT" "$(basename "$STAGE")" )
+          echo "MACOS_ASSET=$OUT" >> "$GITHUB_ENV"
+
+      - name: Build Linux tar.gz
+        run: |
+          set -euo pipefail
+          OUT="chrome-agent-bridge-linux-${TAG}.tar.gz"
+          ( cd "$(dirname "$STAGE")" && tar -czf "$GITHUB_WORKSPACE/$OUT" "$(basename "$STAGE")" )
+          echo "LINUX_ASSET=$OUT" >> "$GITHUB_ENV"
+
+      - name: Compute SHA-256 sums
+        run: |
+          sha256sum \
+            "$WINDOWS_ASSET" \
+            "$MACOS_ASSET" \
+            "$LINUX_ASSET" \
+            > "chrome-agent-bridge-${TAG}-sha256.txt"
+          cat "chrome-agent-bridge-${TAG}-sha256.txt"
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          generate_release_notes: true
+          files: |
+            ${{ env.WINDOWS_ASSET }}
+            ${{ env.MACOS_ASSET }}
+            ${{ env.LINUX_ASSET }}
+            chrome-agent-bridge-${{ env.TAG }}-sha256.txt
+          body: |
+            ## Install
+
+            **Windows:** Download `chrome-agent-bridge-windows-${{ env.TAG }}.zip`, extract, double-click `setup.bat`.
+            **macOS:** Download `chrome-agent-bridge-macos-${{ env.TAG }}.tar.gz`, extract, double-click `setup.command`.
+            **Linux:** Download `chrome-agent-bridge-linux-${{ env.TAG }}.tar.gz`, extract, run `bash setup.command` or `bash scripts/install-autostart-linux.sh`.
+
+            Verify with `sha256sum -c chrome-agent-bridge-${{ env.TAG }}-sha256.txt`.
+
+            See [README](https://github.com/MichaelZelbel/chrome-agent-bridge#easy-install-recommended-for-end-users) for full setup walkthrough and Tailscale wiring.
