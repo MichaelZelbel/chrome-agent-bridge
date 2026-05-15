@@ -82,11 +82,16 @@ async function getBridgePage() {
 
 async function newBridgePage(url) {
   const context = await getContext();
-  if (bridgePage && !bridgePage.isClosed()) {
-    try { await bridgePage.close(); } catch (_) { /* ignore */ }
+  // Reuse the existing bridge page if it's still alive -- this navigates
+  // in place and avoids creating a new tab. Creating a new tab each /goto
+  // pops the Chrome window to front on Windows/macOS and steals keyboard
+  // focus from whatever the user is currently typing in. Only create a
+  // new tab on the very first /goto after the gateway starts (or after
+  // the user manually closes the bridge tab).
+  if (!bridgePage || bridgePage.isClosed()) {
+    bridgePage = await context.newPage();
+    bridgePage.setDefaultTimeout(15000);
   }
-  bridgePage = await context.newPage();
-  bridgePage.setDefaultTimeout(15000);
   await bridgePage.goto(url, { waitUntil: 'domcontentloaded' });
   return bridgePage;
 }
