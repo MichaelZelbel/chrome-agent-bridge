@@ -48,8 +48,19 @@ REM Give Chrome a moment to initialize the debugging endpoint.
 timeout /t 5 /nobreak >nul
 
 REM --- Start the gateway ----------------------------------------------------
+REM Gateway stdout/stderr goes to a log file. Under Task Scheduler with the
+REM hidden-window setup, an un-redirected node process discards all output,
+REM which makes diagnosing intermittent timeouts impossible -- you can see the
+REM gateway is "up" but have no record of what requests it received or why
+REM Playwright failed. The log lives at %LOCALAPPDATA%\ChromeAgentBridge\
+REM gateway.log; tail it when an agent reports the bridge as unreliable.
+set "LOG_DIR=%LOCALAPPDATA%\ChromeAgentBridge"
+set "LOG_FILE=%LOG_DIR%\gateway.log"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+echo ==== gateway start %DATE% %TIME% ==== >> "%LOG_FILE%"
+
 echo Starting Chrome Agent Bridge gateway...
 cd /d "%~dp0..\gateway"
-node index.js
+node index.js >> "%LOG_FILE%" 2>&1
 
 endlocal

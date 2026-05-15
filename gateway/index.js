@@ -8,6 +8,42 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '3007', 10);
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9222';
 
+// Request logging middleware. Without this, an agent that reports
+// "/goto timed out" gives us nothing to correlate against -- we don't know
+// what the bridge actually saw, when, or how long Playwright took before
+// failing. With this, every request produces a single line:
+//   2026-05-15T14:55:30.123Z POST /goto {"url":"..."} -> 200 4630ms
+// Errors get the response body too:
+//   2026-05-15T14:55:35.456Z POST /goto -> 500 8021ms {"error":"timeout..."}
+// The .bat launcher under Task Scheduler redirects stdout/stderr to
+// %LOCALAPPDATA%\ChromeAgentBridge\gateway.log -- tail that file when
+// diagnosing.
+app.use((req, res, next) => {
+  const start = Date.now();
+  const reqBody = req.method !== 'GET' && req.body && Object.keys(req.body).length
+    ? ' ' + JSON.stringify(req.body).slice(0, 200)
+    : '';
+  const origJson = res.json.bind(res);
+  res.json = (body) => {
+    const elapsed = Date.now() - start;
+    const line = `${new Date().toISOString()} ${req.method} ${req.path}${reqBody} -> ${res.statusCode} ${elapsed}ms`;
+    if (res.statusCode >= 400) {
+      console.error(line, JSON.stringify(body).slice(0, 300));
+    } else {
+      console.log(line);
+    }
+    return origJson(body);
+  };
+  res.on('finish', () => {
+    // Catches paths that use res.send (e.g. /content, /screenshot success)
+    // where res.json wasn't called.
+    if (!res.headersSent || res.getHeader('Content-Type') === 'application/json') return;
+    const elapsed = Date.now() - start;
+    console.log(`${new Date().toISOString()} ${req.method} ${req.path}${reqBody} -> ${res.statusCode} ${elapsed}ms`);
+  });
+  next();
+});
+
 async function getPage() {
   let browser;
   try {
