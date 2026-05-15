@@ -87,17 +87,23 @@ See [`docs/security.md`](docs/security.md) for the full threat model.
 
 If you just want the bridge running on your PC and don't want to think about Node.js, npm, or PowerShell flags — use the easy installer. It checks prerequisites, installs Node.js if missing, runs `npm install`, sets up auto-start, and verifies the gateway is responding. One double-click.
 
+**Stable direct-download links** (always resolve to the newest release):
+
+- Windows: <https://github.com/MichaelZelbel/chrome-agent-bridge/releases/latest/download/chrome-agent-bridge-windows.zip>
+- macOS: <https://github.com/MichaelZelbel/chrome-agent-bridge/releases/latest/download/chrome-agent-bridge-macos.tar.gz>
+- Linux: <https://github.com/MichaelZelbel/chrome-agent-bridge/releases/latest/download/chrome-agent-bridge-linux.tar.gz>
+
 ### Windows
 
-1. Download the latest `chrome-agent-bridge-windows-vX.Y.Z.zip` from the [Releases page](https://github.com/MichaelZelbel/chrome-agent-bridge/releases).
-2. Extract anywhere (e.g. `Downloads\chrome-agent-bridge`).
+1. Download [`chrome-agent-bridge-windows.zip`](https://github.com/MichaelZelbel/chrome-agent-bridge/releases/latest/download/chrome-agent-bridge-windows.zip).
+2. Extract anywhere (right-click → *Extract All…*).
 3. Double-click **`setup.bat`** in the extracted folder.
 4. If Windows SmartScreen warns ("Windows protected your PC"): click *More info* → *Run anyway*. The script is unsigned — that's expected for a free open-source tool. Inspect the source first if you'd rather.
 5. The installer handles everything end-to-end. When it's done a Chrome window opens — log into the sites your agent should use, and you're done.
 
 ### macOS
 
-1. Download the latest `chrome-agent-bridge-macos-vX.Y.Z.tar.gz` from the [Releases page](https://github.com/MichaelZelbel/chrome-agent-bridge/releases).
+1. Download [`chrome-agent-bridge-macos.tar.gz`](https://github.com/MichaelZelbel/chrome-agent-bridge/releases/latest/download/chrome-agent-bridge-macos.tar.gz).
 2. Double-click in Finder to extract.
 3. Double-click **`setup.command`** in the extracted folder.
 4. Gatekeeper will refuse the first time ("cannot be opened because it is from an unidentified developer"). Open *System Settings → Privacy & Security*, scroll to the security message about `setup.command`, click *Open Anyway*. (Or right-click → *Open* → *Open*.) Apple charges $99/year for a developer ID; the project doesn't have one yet.
@@ -105,7 +111,7 @@ If you just want the bridge running on your PC and don't want to think about Nod
 
 ### Linux
 
-Linux users typically prefer the manual path below — but the same effect is one command:
+Download [`chrome-agent-bridge-linux.tar.gz`](https://github.com/MichaelZelbel/chrome-agent-bridge/releases/latest/download/chrome-agent-bridge-linux.tar.gz), extract, run `bash setup.command`. Or, the manual one-liner:
 
 ```bash
 git clone https://github.com/MichaelZelbel/chrome-agent-bridge.git
