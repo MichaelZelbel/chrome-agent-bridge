@@ -44,7 +44,20 @@ app.use((req, res, next) => {
   next();
 });
 
-async function getPage() {
+// The bridge owns exactly one Chrome page. /goto creates it (and closes
+// the previous one). /content, /screenshot, /click, /type, /press all
+// operate on this page. The user's manual login tabs (Discord, LinkedIn,
+// etc.) stay untouched -- we never reach into them.
+//
+// Why this matters: an earlier version used context.pages()[0] which
+// returned whichever tab the user opened first. If that was Discord
+// (or any other site with continuous worker activity / never-resolving
+// font promises), Playwright's page.screenshot() would hang waiting for
+// fonts to load and time out after 15s. Tracking our own page makes
+// /screenshot deterministic.
+let bridgePage = null;
+
+async function getContext() {
   let browser;
   try {
     browser = await chromium.connectOverCDP(CDP_URL);
@@ -55,23 +68,34 @@ async function getPage() {
       `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
     );
   }
-
   const context = browser.contexts()[0];
   if (!context) {
     throw new Error('No browser context found. Open at least one tab in Chrome.');
   }
-
-  const pages = context.pages().filter(p => !p.isClosed());
-  const page = pages[0] || await context.newPage();
-
-  page.setDefaultTimeout(15000);
-
-  return page;
+  return context;
 }
+
+async function getBridgePage() {
+  if (bridgePage && !bridgePage.isClosed()) return bridgePage;
+  return null;
+}
+
+async function newBridgePage(url) {
+  const context = await getContext();
+  if (bridgePage && !bridgePage.isClosed()) {
+    try { await bridgePage.close(); } catch (_) { /* ignore */ }
+  }
+  bridgePage = await context.newPage();
+  bridgePage.setDefaultTimeout(15000);
+  await bridgePage.goto(url, { waitUntil: 'domcontentloaded' });
+  return bridgePage;
+}
+
+const NO_PAGE_ERR = { error: 'No bridge page open yet. Call POST /goto first.' };
 
 app.get('/health', async (req, res) => {
   try {
-    await getPage();
+    await getContext();
     res.json({ status: 'ok' });
   } catch (err) {
     res.status(500).json({ status: 'error', error: err.message });
@@ -83,9 +107,7 @@ app.post('/goto', async (req, res) => {
     const { url } = req.body || {};
     if (!url) return res.status(400).json({ error: 'Missing url' });
 
-    const page = await getPage();
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
-
+    const page = await newBridgePage(url);
     res.json({ success: true, url: page.url() });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -94,7 +116,8 @@ app.post('/goto', async (req, res) => {
 
 app.get('/content', async (req, res) => {
   try {
-    const page = await getPage();
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
     res.send(await page.content());
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -103,7 +126,8 @@ app.get('/content', async (req, res) => {
 
 app.get('/screenshot', async (req, res) => {
   try {
-    const page = await getPage();
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
 
     // Minimal screenshot config -- newer Playwright (1.50+) is strict
     // about page-stability when `animations: 'disabled'` is set and hangs
@@ -127,7 +151,8 @@ app.post('/click', async (req, res) => {
     const { selector } = req.body || {};
     if (!selector) return res.status(400).json({ error: 'Missing selector' });
 
-    const page = await getPage();
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
     await page.click(selector);
 
     res.json({ success: true });
@@ -141,7 +166,8 @@ app.post('/type', async (req, res) => {
     const { selector, text } = req.body || {};
     if (!selector) return res.status(400).json({ error: 'Missing selector' });
 
-    const page = await getPage();
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
     await page.fill(selector, text || '');
 
     res.json({ success: true });
@@ -155,7 +181,8 @@ app.post('/press', async (req, res) => {
     const { key } = req.body || {};
     if (!key) return res.status(400).json({ error: 'Missing key' });
 
-    const page = await getPage();
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
     await page.keyboard.press(key);
 
     res.json({ success: true });
