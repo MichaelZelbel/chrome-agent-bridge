@@ -327,6 +327,25 @@ Common issues and fixes are in
 
 ---
 
+## Support this project
+
+The Chrome Agent Bridge is free and MIT licensed, and it stays that way.
+
+If it's useful to you and you'd like to support the work, you can buy me a
+coffee on Ko-fi. Supporters get my personal extended build, the OpenClaw
+DevOps Kit. It bundles this bridge into a full hands-off OpenClaw setup: it
+installs and onboards OpenClaw and Claude Code, wires the bridge in so an
+agent on your server can drive a real logged-in Chrome, and adds a
+watchdog, Telegram alerts, safe nightly upgrades, cost monitoring, and a
+security audit. You end up with a DevOps assistant living on your server
+that you can just ask to do things.
+
+[Support on Ko-fi and get the OpenClaw DevOps Kit](https://ko-fi.com/s/8752f1ccc7)
+
+Either way, thanks for using the bridge.
+
+---
+
 ## License
 
 [MIT](LICENSE) — Copyright (c) 2026 Michael Zelbel.
