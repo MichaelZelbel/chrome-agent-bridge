@@ -1,3 +1,2 @@
-# Shows a "Sponsor" button at the top of the repo.
-# Points at the OpenClaw DevOps Kit product on Ko-fi.
-custom: ["https://ko-fi.com/s/8752f1ccc7"]
+# Shows a "Sponsor" button at the top of the repo, linking to Ko-fi.
+ko_fi: michaelc0de
