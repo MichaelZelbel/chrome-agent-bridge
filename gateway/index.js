@@ -57,18 +57,36 @@ app.use((req, res, next) => {
 // /screenshot deterministic.
 let bridgePage = null;
 
+// Cache one CDP connection for the gateway's lifetime and reuse it across
+// every request. An earlier version called chromium.connectOverCDP() on each
+// request and never released the browser object, so every call -- including
+// each /health poll from the agent -- leaked one CDP WebSocket. Over days the
+// V8 heap grew until the process hit Node's ~4 GB limit and died with
+// "Reached heap limit Allocation failed - JavaScript heap out of memory".
+// Reusing a single connection keeps memory flat. We still never call
+// browser.close(), so the real Chrome session is never killed.
+let cdpBrowser = null;
+
 async function getContext() {
-  let browser;
-  try {
-    browser = await chromium.connectOverCDP(CDP_URL);
-  } catch (err) {
-    throw new Error(
-      `Cannot connect to Chrome at ${CDP_URL}. ` +
-      `Make sure Chrome is running with --remote-debugging-port=9222 ` +
-      `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
-    );
+  if (!cdpBrowser || !cdpBrowser.isConnected()) {
+    try {
+      cdpBrowser = await chromium.connectOverCDP(CDP_URL);
+    } catch (err) {
+      cdpBrowser = null;
+      throw new Error(
+        `Cannot connect to Chrome at ${CDP_URL}. ` +
+        `Make sure Chrome is running with --remote-debugging-port=9222 ` +
+        `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
+      );
+    }
+    // If Chrome quits or the connection drops, discard the cached handle (and
+    // the now-stale bridge page) so the next request transparently reconnects.
+    cdpBrowser.on('disconnected', () => {
+      cdpBrowser = null;
+      bridgePage = null;
+    });
   }
-  const context = browser.contexts()[0];
+  const context = cdpBrowser.contexts()[0];
   if (!context) {
     throw new Error('No browser context found. Open at least one tab in Chrome.');
   }
