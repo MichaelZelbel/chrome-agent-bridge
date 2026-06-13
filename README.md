@@ -297,6 +297,18 @@ All env vars are optional:
 
 ---
 
+## MCP server
+
+Prefer giving your agent **first-class browser tools** over teaching it to call
+this HTTP API by hand? The [`mcp/`](mcp) folder ships a small Model Context
+Protocol server that exposes `pc_browser_open`, `pc_browser_read`,
+`pc_browser_screenshot`, `pc_browser_click`, `pc_browser_type`,
+`pc_browser_press`, and `pc_browser_health` over stdio. It is a thin, additive
+proxy over the API above and does **not** change the gateway. See
+[`mcp/README.md`](mcp/README.md).
+
+---
+
 ## Multi-agent setup
 
 Run multiple agents on the same PC with isolated profiles, CDP ports, and
