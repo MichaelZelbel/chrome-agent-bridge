@@ -66,10 +66,21 @@ fi
 CHROME_BIN="${CHROME_BIN_OVERRIDE:-$CHROME_BIN}"
 
 # --- Configuration ----------------------------------------------------------
+# Multi-agent: override these env vars before calling this script (or set
+# them inside a small wrapper script). The launcher-side contract is the
+# CAB_* knobs below; we translate them into the env vars gateway/index.js
+# actually reads (HOST / PORT / CDP_URL) right after.
 USER_DATA_DIR="${CAB_PROFILE_DIR:-$DEFAULT_PROFILE_DIR}"
 CDP_PORT="${CAB_CDP_PORT:-9222}"
 CDP_ADDRESS="${CAB_CDP_ADDRESS:-127.0.0.1}"
+GATEWAY_PORT="${CAB_GATEWAY_PORT:-3007}"
+GATEWAY_HOST="${CAB_GATEWAY_HOST:-0.0.0.0}"
 GATEWAY_DIR="$(cd "$(dirname "$0")/.." && pwd)/gateway"
+
+# Translate to the gateway's own env-var contract.
+export HOST="$GATEWAY_HOST"
+export PORT="$GATEWAY_PORT"
+export CDP_URL="http://$CDP_ADDRESS:$CDP_PORT"
 
 mkdir -p "$USER_DATA_DIR"
 
