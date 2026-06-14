@@ -59,6 +59,7 @@ jobs:
           # them in a text editor on double-click).
           chmod +x "$STAGE/setup.command" 2>/dev/null || true
           chmod +x "$STAGE/scripts/macos-easy-install.command" 2>/dev/null || true
+          chmod +x "$STAGE/scripts/linux-easy-install.sh" 2>/dev/null || true
           chmod +x "$STAGE/scripts/start-chrome-agent-bridge.sh" 2>/dev/null || true
           chmod +x "$STAGE/scripts/install-autostart-macos.sh" 2>/dev/null || true
           chmod +x "$STAGE/scripts/install-autostart-linux.sh" 2>/dev/null || true
