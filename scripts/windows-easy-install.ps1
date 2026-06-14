@@ -101,12 +101,37 @@ foreach ($p in $chromePaths) {
     if (Test-Path $p) { $chromeFound = $true; Write-Ok "Chrome found at $p"; break }
 }
 if (-not $chromeFound) {
-    Write-Warn "Chrome not detected in standard locations."
-    Write-Warn "The bridge needs Chrome to work. Install it from https://www.google.com/chrome/"
-    Write-Warn "You can continue this install -- the bridge will work once Chrome is installed."
+    Write-Warn "Google Chrome is not installed."
+    Write-Warn "The bridge needs Chrome to drive a browser."
     Write-Host ""
-    $continue = Read-Host "Continue without Chrome? (y/n)"
-    if ($continue -ne 'y' -and $continue -ne 'Y') { exit 0 }
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        $reply = Read-Host "Install Google Chrome via winget now? (y/n)"
+        if ($reply -eq 'y' -or $reply -eq 'Y') {
+            Write-Step "Installing Google Chrome via winget (this takes ~30-60 seconds)..."
+            & winget install --id Google.Chrome --silent --accept-source-agreements --accept-package-agreements
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "winget install failed (exit code $LASTEXITCODE)."
+                Write-Warn "Install Chrome manually from https://www.google.com/chrome/ -- the bridge will work once it's present."
+                $continue = Read-Host "Continue without Chrome? (y/n)"
+                if ($continue -ne 'y' -and $continue -ne 'Y') { exit 0 }
+            } else {
+                foreach ($p in $chromePaths) {
+                    if (Test-Path $p) { $chromeFound = $true; Write-Ok "Chrome installed at $p"; break }
+                }
+                if (-not $chromeFound) {
+                    Write-Warn "winget reported success but chrome.exe wasn't found in standard locations yet. Continuing -- the bridge will pick it up once Chrome is on disk."
+                }
+            }
+        } else {
+            Write-Warn "Continuing without Chrome. Install it later from https://www.google.com/chrome/ -- the bridge will work once Chrome is present."
+        }
+    } else {
+        Write-Warn "winget isn't available on this Windows build, so Chrome can't be auto-installed."
+        Write-Warn "Install Chrome manually from https://www.google.com/chrome/ -- the bridge will work once it's present."
+        $continue = Read-Host "Continue without Chrome? (y/n)"
+        if ($continue -ne 'y' -and $continue -ne 'Y') { exit 0 }
+    }
 }
 
 # 4. Locate or fetch the bridge ------------------------------------------------
