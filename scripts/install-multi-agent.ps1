@@ -52,8 +52,13 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$Letter,
 
-    [int]$CdpPort = 9223,
-    [int]$GatewayPort = 3008
+    # Default 0 = "pick automatically based on Letter". For a single A-Z letter
+    # we offset from the default-install ports (A=9222/3007, B=9223/3008,
+    # C=9224/3009, ...) so the user only has to type one letter and gets
+    # predictable, non-colliding ports. Non-letter names fall back to fixed
+    # defaults; the user can always override explicitly.
+    [int]$CdpPort = 0,
+    [int]$GatewayPort = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,6 +66,23 @@ $ErrorActionPreference = 'Stop'
 if ($Letter -notmatch '^[A-Za-z0-9_-]{1,16}$') {
     Write-Error "Letter must be 1-16 characters of [A-Za-z0-9_-]. Got: '$Letter'"
     exit 1
+}
+
+if ($CdpPort -le 0) {
+    if ($Letter -match '^[A-Za-z]$') {
+        $offset = [int][char]([string]$Letter).ToUpper() - [int][char]'A'
+        $CdpPort = 9222 + $offset
+    } else {
+        $CdpPort = 9223
+    }
+}
+if ($GatewayPort -le 0) {
+    if ($Letter -match '^[A-Za-z]$') {
+        $offset = [int][char]([string]$Letter).ToUpper() - [int][char]'A'
+        $GatewayPort = 3007 + $offset
+    } else {
+        $GatewayPort = 3008
+    }
 }
 
 $ScriptsDir = $PSScriptRoot

@@ -1,88 +1,118 @@
-# Multi-Agent Setup
+# Adding more agents (second, third, ...) on the same PC
 
-You can run several independent agents on the same PC, each with its own
-Chrome profile (= its own cookie jar / set of logged-in sites), its own
-CDP port, and its own gateway port. Useful when different agents need
-different logins -- e.g., one agent on Account A's Discord, another on
-Account B's LinkedIn.
+You've already installed the bridge with `setup.bat`. You now have **one
+agent** running on gateway port 3007, with its own Chrome window and its
+own logged-in sites.
 
-## Per-agent isolation
+This page is about adding a **second agent** -- so one AI can act as
+Account A on Discord while another acts as Account B, both on the same
+laptop, both surviving reboots, neither stepping on the other.
 
-Each agent needs three distinct things:
+## Windows -- the easy way
 
-| Resource             | Default install         | Agent `B` (example)      |
-|----------------------|-------------------------|--------------------------|
-| Chrome profile dir   | `ChromeAgentProfile`    | `ChromeAgentProfileB`    |
-| Chrome CDP port      | `9222`                  | `9223`                   |
-| Gateway listen port  | `3007`                  | `3008`                   |
+In the folder where you extracted the bridge (the one that contains
+`setup.bat`), **double-click `add-agent.bat`**.
 
-Profiles must not be shared -- Chrome refuses to open the same
-`user-data-dir` from two processes. CDP ports and gateway ports must each
-be unique and free on the PC.
+A small console window opens and shows:
 
-The default `setup.bat` install gives you one agent at the "Default" column
-above. Use the recipes below to add a second, third, etc.
+```
+============================================================
+ Chrome Agent Bridge -- add another agent
+============================================================
 
-## Windows -- one-liner per additional agent
+Your default agent uses gateway port 3007. This adds a new
+agent with its OWN empty Chrome profile and its OWN port.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-multi-agent.ps1 -Letter B
+Pick a letter -- it determines the port automatically:
+  B   second agent,  gateway port 3008
+  C   third agent,   gateway port 3009
+  D   fourth agent,  gateway port 3010   (and so on)
+
+Letter (just press Enter for B):
 ```
 
-That's the entire happy path. It:
+Press Enter. That's the whole interaction. You'll see Windows ask
+"Do you want to allow this app to make changes?" -- click Yes.
 
-1. Writes a tiny wrapper `scripts\start-agent-B.bat` that sets the right
-   CAB_* env vars and calls the canonical `start-chrome-agent-bridge.bat`.
-2. Registers Task Scheduler entry `ChromeAgentBridgeB` (logon trigger,
-   restart-on-failure, hidden window) pointed at that wrapper.
-3. Starts the task immediately so the new Chrome window opens right away.
+### What you get afterwards (automatic, no thinking required)
 
-Defaults: Agent B uses profile `%LOCALAPPDATA%\ChromeAgentProfileB`,
-CDP port `9223`, gateway port `3008`.
+- A new Chrome window opens with an **empty** profile -- no cookies, no
+  logins. Sign into the sites THIS agent should be allowed to use
+  (your secondary Discord, a different LinkedIn account, etc.). Those
+  logins persist in `%LOCALAPPDATA%\ChromeAgentProfileB` across reboots.
+- A Windows Task Scheduler entry called `ChromeAgentBridgeB` is registered.
+  This starts Agent B every time you log into Windows, and restarts it
+  automatically if it crashes. **You don't need to do anything to keep it
+  running** -- not after this install, not after a reboot, not ever.
+- Your AI agent (the one that drives the browser) should now point at:
+  ```
+  http://<your-PC's-tailnet-IP>:3008
+  ```
+  Agent A is still on `:3007` and is unchanged.
 
-For a third, fourth, etc. agent, pass different ports:
+That's it.
 
-```powershell
-.\scripts\install-multi-agent.ps1 -Letter C -CdpPort 9224 -GatewayPort 3009
-.\scripts\install-multi-agent.ps1 -Letter D -CdpPort 9225 -GatewayPort 3010
-```
+### Adding a third / fourth agent
 
-Pre-flight check: the script warns up front if a requested port is already
-in use on this PC, so you don't end up with a registered task whose gateway
-fails to bind on every restart.
-
-### Log into the per-agent sites
-
-The new Chrome window is a clean profile -- no cookies, no logins. Sign in
-to whatever sites this specific agent should be able to use. Those logins
-persist in `%LOCALAPPDATA%\ChromeAgentProfileB` and survive reboots.
-
-### Point the agent at its own gateway
-
-| Agent           | Gateway URL                                   |
-|-----------------|-----------------------------------------------|
-| Default agent   | `http://<this-PC-tailnet-IP>:3007`            |
-| Agent B         | `http://<this-PC-tailnet-IP>:3008`            |
-| Agent C         | `http://<this-PC-tailnet-IP>:3009`            |
+Double-click `add-agent.bat` again. Type **C** for the third agent
+(gateway 3009), **D** for the fourth (3010), and so on. Each letter is
+its own isolated agent.
 
 ### Removing an agent
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\uninstall-multi-agent.ps1 -Letter B -GatewayPort 3008
-```
+Double-click `remove-agent.bat`. Type the letter (e.g. `B`). It:
 
-That unregisters the task, stops the running gateway + Chrome for this
-agent, and deletes the wrapper bat. The Chrome profile data is
-**preserved** -- delete it manually if you want to forget the logins:
+- stops the running gateway and Chrome window for Agent B,
+- removes the Task Scheduler entry, so it won't start at next logon,
+- deletes the wrapper script that `add-agent.bat` had generated.
+
+Your Chrome **profile is preserved on disk**. If you re-add Agent B later,
+all your logins are still there. To really wipe the logins, delete the
+profile folder by hand:
 
 ```powershell
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\ChromeAgentProfileB"
 ```
 
-## macOS / Linux -- env vars to the existing launcher
+`remove-agent.bat` will **never touch** your default agent (port 3007) --
+that one is removed by `scripts\uninstall-autostart-windows.ps1`.
 
-The POSIX launcher (`scripts/start-chrome-agent-bridge.sh`) reads the same
-env-var contract directly -- no file duplication needed:
+## Where things live
+
+For Agent B (and analogously for C, D, ...):
+
+| What                  | Where                                                  |
+|-----------------------|--------------------------------------------------------|
+| Chrome window/profile | `%LOCALAPPDATA%\ChromeAgentProfileB`                   |
+| Auto-start entry      | Task Scheduler -> `ChromeAgentBridgeB`                 |
+| Gateway log           | `%LOCALAPPDATA%\ChromeAgentBridge\gateway-3008.log`    |
+| Gateway URL           | `http://<your-PC-tailnet-IP>:3008`                     |
+| Wrapper script        | `scripts\start-agent-B.bat`  (generated, don't edit)   |
+| Chrome's debug port   | `127.0.0.1:9223` (Chrome's CDP -- never network-exposed) |
+
+The default agent's profile (`ChromeAgentProfile`, no letter suffix) and
+port 3007 are not touched.
+
+## Practical notes
+
+- Each agent runs its own visible Chrome window. With three agents you'll
+  see three Chrome windows at every logon. That's normal.
+- Logging into the same site under multiple profiles works fine -- each
+  profile is its own isolated cookie jar.
+- Memory: a running Chrome with one busy tab costs ~500 MB. Two agents on
+  16 GB is comfortable; more starts to hurt -- check Task Manager.
+- If you share one PC IP across several agents on Tailscale, you can use
+  Tailscale ACLs to control which tailnet members can reach which port.
+- The first time you double-click `add-agent.bat`, Windows may show
+  "Windows protected your PC" (SmartScreen) because the script isn't
+  signed. Click *More info* -> *Run anyway*. Same as `setup.bat`.
+
+## macOS / Linux
+
+On macOS and Linux, the launcher (`scripts/start-chrome-agent-bridge.sh`)
+already reads the same configuration knobs from environment variables
+directly. You don't need to duplicate any file -- you just run the
+launcher with different env values for each agent:
 
 ```bash
 CAB_PROFILE_DIR="$HOME/.local/share/chrome-agent-profile-b" \
@@ -91,44 +121,33 @@ CAB_GATEWAY_PORT=3008 \
   ./scripts/start-chrome-agent-bridge.sh
 ```
 
-For boot-autostart on macOS / Linux, you'd register a second launchd
-LaunchAgent or systemd user unit that exports those env vars before
-invoking the launcher (mirror of the Windows wrapper-bat approach, just
-translated to plist `EnvironmentVariables` or systemd `Environment=`
-directives). We don't ship a dedicated multi-agent installer for macOS /
-Linux yet -- PRs welcome.
+For boot-time auto-start, register a second launchd LaunchAgent (macOS) or
+systemd user unit (Linux) per agent, each exporting the right env vars
+before invoking the launcher. We don't yet ship a dedicated multi-agent
+helper for these platforms -- contributions welcome.
 
-## Env-var contract
+## Advanced -- non-letter names and custom ports
 
-The launcher accepts these on every OS:
+The double-click `add-agent.bat` handles 95 % of cases by typing one
+letter. If you want a non-letter name (`work`, `personal`, `demo-2`) or
+specific ports, open a PowerShell **inside the bridge folder** (the one
+containing `setup.bat`) and run the underlying script directly:
 
-| Variable           | Default (Windows)                              | Default (macOS)                                                  | Default (Linux)                              |
-|--------------------|------------------------------------------------|------------------------------------------------------------------|----------------------------------------------|
-| `CAB_PROFILE_DIR`  | `%LOCALAPPDATA%\ChromeAgentProfile`            | `~/Library/Application Support/ChromeAgentProfile`               | `~/.local/share/chrome-agent-profile`        |
-| `CAB_CDP_PORT`     | `9222`                                         | `9222`                                                           | `9222`                                       |
-| `CAB_CDP_ADDRESS`  | `127.0.0.1`                                    | `127.0.0.1`                                                      | `127.0.0.1`                                  |
-| `CAB_GATEWAY_PORT` | `3007`                                         | `3007`                                                           | `3007`                                       |
-| `CAB_GATEWAY_HOST` | `0.0.0.0`                                      | `0.0.0.0`                                                        | `0.0.0.0`                                    |
+```powershell
+.\scripts\install-multi-agent.ps1 -Letter work -CdpPort 9230 -GatewayPort 3020
+```
 
-The launcher translates them into the env vars `gateway/index.js` itself
-reads (`HOST`, `PORT`, `CDP_URL`). Don't change `CAB_CDP_ADDRESS` away
-from `127.0.0.1` unless you fully understand the security model -- see
-[`security.md`](security.md).
+To open PowerShell in the right folder: in File Explorer, right-click any
+empty area inside the bridge folder and pick *Open in Terminal* (Windows
+11) or hold Shift while right-clicking and pick *Open PowerShell window
+here* (Windows 10).
 
-## Practical notes
+Full configuration knobs (used by both the easy and the advanced path):
 
-- Each agent's Chrome is a separate visible process. Don't be surprised
-  to see several Chrome instances running.
-- Logging into the same site under two profiles works fine -- they're
-  isolated cookie jars.
-- RAM cost grows with the number of profiles. Two agents is comfortable
-  on 16 GB; more starts to hurt. Watch with Task Manager / `htop`.
-- Per-port log files live at
-  `%LOCALAPPDATA%\ChromeAgentBridge\gateway-<port>.log` on Windows;
-  `journalctl --user -u chrome-agent-bridge` covers all systemd units on
-  Linux; macOS logs end up under `~/Library/Logs/chrome-agent-bridge/`
-  when the launchd agent is in use.
-- If you reuse the same Tailscale IP for many gateways, Tailscale ACLs
-  can restrict which tailnet members reach which ports -- useful if you
-  want Agent A reachable from the team's VPS but Agent B only from your
-  laptop.
+| Variable           | Default                                  |
+|--------------------|------------------------------------------|
+| `CAB_PROFILE_DIR`  | `%LOCALAPPDATA%\ChromeAgentProfile`      |
+| `CAB_CDP_PORT`     | `9222`                                   |
+| `CAB_CDP_ADDRESS`  | `127.0.0.1` -- don't change unless you read [`security.md`](security.md) |
+| `CAB_GATEWAY_PORT` | `3007`                                   |
+| `CAB_GATEWAY_HOST` | `0.0.0.0`                                |

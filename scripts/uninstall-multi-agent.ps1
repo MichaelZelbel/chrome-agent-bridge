@@ -33,10 +33,21 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$Letter,
 
-    [int]$GatewayPort = 3008
+    # Default 0 = derive from Letter (B=3008, C=3009, ...) so the user only
+    # has to type the letter. Matches install-multi-agent.ps1's convention.
+    [int]$GatewayPort = 0
 )
 
 $ErrorActionPreference = 'Continue'
+
+if ($GatewayPort -le 0) {
+    if ($Letter -match '^[A-Za-z]$') {
+        $offset = [int][char]([string]$Letter).ToUpper() - [int][char]'A'
+        $GatewayPort = 3007 + $offset
+    } else {
+        $GatewayPort = 3008
+    }
+}
 
 $ScriptsDir = $PSScriptRoot
 $WrapperPath = Join-Path $ScriptsDir "start-agent-$Letter.bat"
