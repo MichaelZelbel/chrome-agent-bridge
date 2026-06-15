@@ -2,6 +2,8 @@
 
 > Control a real logged-in Chrome browser from AI agents over a private network.
 
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/michaelc0de)
+
 A small HTTP gateway that runs on **Windows, macOS, or Linux** and exposes
 a handful of safe browser actions to remote AI agents. The agents drive a
 real Chrome window — with your real, persistent logins — so they can use
@@ -343,16 +345,11 @@ Common issues and fixes are in
 
 The Chrome Agent Bridge is free and MIT licensed, and it stays that way.
 
-If it's useful to you and you'd like to support the work, you can buy me a
-coffee on Ko-fi. Supporters get my personal extended build, the OpenClaw
-DevOps Kit. It bundles this bridge into a full hands-off OpenClaw setup: it
-installs and onboards OpenClaw and Claude Code, wires the bridge in so an
-agent on your server can drive a real logged-in Chrome, and adds a
-watchdog, Telegram alerts, safe nightly upgrades, cost monitoring, and a
-security audit. You end up with a DevOps assistant living on your server
-that you can just ask to do things.
+If it saved you time and you'd like to say thanks, you can buy me a coffee
+on Ko-fi. One-off, no subscription, no tiers -- just a kind gesture that
+keeps me motivated to maintain this and ship the next thing.
 
-[Support on Ko-fi and get the OpenClaw DevOps Kit](https://ko-fi.com/s/8752f1ccc7)
+[☕ Buy me a coffee on Ko-fi](https://ko-fi.com/michaelc0de)
 
 Either way, thanks for using the bridge.
 
