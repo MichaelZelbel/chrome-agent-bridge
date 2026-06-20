@@ -191,9 +191,18 @@ app.post('/click', async (req, res) => {
     // force:true skips actionability checks (visible/enabled/stable/uncovered).
     // Needed for controls a parent element covers -- e.g. a link inside a UI5
     // table cell, where the cell intercepts pointer events.
-    await page.click(selector, force === true ? { force: true } : undefined);
-
-    res.json({ success: true });
+    // Frame-aware: a CSS/text selector's target may live in a child iframe
+    // (SAP opens editors / lobby widgets in iframes), so try every frame, not
+    // just the top one. Playwright's CSS and text= engines already pierce
+    // shadow DOM within a frame.
+    for (const f of page.frames()) {
+      const loc = f.locator(selector);
+      if ((await loc.count()) > 0) {
+        await loc.first().click(force === true ? { force: true } : undefined);
+        return res.json({ success: true });
+      }
+    }
+    return res.status(404).json({ error: `No element matched selector "${selector}"` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -386,6 +395,85 @@ app.post('/click-by-role', async (req, res) => {
       }
     }
     return res.status(404).json({ error: `No ${role} found${name ? ` named "${name}"` : ''}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Click an element by its VISIBLE TEXT, regardless of ARIA role. Needed for
+// SPA controls that are role-less -- e.g. the SAP Build lobby renders each
+// project tile as `<a class="project-title">` with NO href, so it has no
+// implicit "link" role and is invisible to /click-by-role and to the
+// accessibility snapshot. This walks the real DOM (piercing shadow roots) in
+// every frame, picks the smallest element whose text matches, and dispatches a
+// native click so the SPA's own handler fires. Params:
+//   text  (required)  visible text to match
+//   exact (bool)      full-text equality vs. substring (default substring)
+//   tag   (string)    optional tag filter, e.g. "a", "button"
+//   nth   (number)    pick the nth match among equally-specific hits (default 0)
+app.post('/click-by-text', async (req, res) => {
+  try {
+    const { text, exact, tag, nth } = req.body || {};
+    if (!text) return res.status(400).json({ error: 'Missing text' });
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    const args = { text, exact: exact === true, tag: tag || null, nth: nth || 0 };
+    const finder = (a) => {
+      const matches = [];
+      const walk = (root) => {
+        const kids = root.children ? Array.from(root.children) : [];
+        for (const el of kids) {
+          const full = (el.textContent || '').trim();
+          const hit = a.exact ? full === a.text : full.includes(a.text);
+          if (hit && (!a.tag || el.tagName.toLowerCase() === a.tag)) matches.push({ el, len: full.length });
+          if (el.shadowRoot) walk(el.shadowRoot);
+          walk(el);
+        }
+      };
+      walk(document.body);
+      if (!matches.length) return { clicked: false, count: 0 };
+      // smallest text length = most specific (the leaf, not a wrapping container)
+      matches.sort((x, y) => x.len - y.len);
+      const target = (matches[a.nth] || matches[0]).el;
+      target.scrollIntoView({ block: 'center', inline: 'center' });
+      target.click();
+      return { clicked: true, count: matches.length, tag: target.tagName.toLowerCase() };
+    };
+
+    for (const f of page.frames()) {
+      try {
+        const r = await f.evaluate(finder, args);
+        if (r && r.clicked) return res.json({ success: true, ...r, frame: f.url().slice(0, 80) });
+      } catch (_) { /* frame detached / cross-origin -- skip */ }
+    }
+    return res.status(404).json({ error: `No element found with text "${text}"` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// General escape hatch: run a JS expression in the page (or a named child
+// frame) and return its JSON result. Indispensable for SPAs the role/label
+// helpers can't reach -- inspecting shadow-DOM structure, reading state,
+// dispatching custom events, or confirming an action's effect. `js` is
+// evaluated as an expression; wrap multi-statement logic in an IIFE:
+//   { "js": "(() => Array.from(document.querySelectorAll('a.project-title')).map(a=>a.textContent))" }
+// Optional `frame` is a URL substring selecting which frame to run in (default
+// main frame). Localhost-only bridge, so arbitrary eval is acceptable here.
+app.post('/eval', async (req, res) => {
+  try {
+    const { js, frame } = req.body || {};
+    if (!js) return res.status(400).json({ error: 'Missing js' });
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    let f = page.mainFrame();
+    if (frame) f = page.frames().find((x) => x.url().includes(frame)) || f;
+    const result = await f.evaluate(js);
+    res.json({ result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
