@@ -85,7 +85,18 @@ if ($GatewayPort -le 0) {
     }
 }
 
+# Always operate against the STABLE install, not wherever this script happens
+# to live (e.g. a Downloads extract). If a stable install exists and we're not
+# already running from it, target its scripts dir so the generated wrapper and
+# the scheduled task reference the stable home -- the added agent then survives
+# the user deleting the folder they ran this from. Mirrors windows-easy-install.
 $ScriptsDir = $PSScriptRoot
+$StableScripts = Join-Path $env:LOCALAPPDATA 'Programs\ChromeAgentBridge\scripts'
+if ((Test-Path (Join-Path $StableScripts 'start-chrome-agent-bridge.bat')) -and
+    ($ScriptsDir.TrimEnd('\') -ine $StableScripts.TrimEnd('\'))) {
+    Write-Host "[multi-agent] Using stable install at $(Split-Path $StableScripts -Parent)" -ForegroundColor Cyan
+    $ScriptsDir = $StableScripts
+}
 $WrapperPath = Join-Path $ScriptsDir "start-agent-$Letter.bat"
 $ProfileDir = Join-Path $env:LOCALAPPDATA "ChromeAgentProfile$Letter"
 $TaskName = "ChromeAgentBridge$Letter"

@@ -183,12 +183,15 @@ app.get('/screenshot', async (req, res) => {
 
 app.post('/click', async (req, res) => {
   try {
-    const { selector } = req.body || {};
+    const { selector, force } = req.body || {};
     if (!selector) return res.status(400).json({ error: 'Missing selector' });
 
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
-    await page.click(selector);
+    // force:true skips actionability checks (visible/enabled/stable/uncovered).
+    // Needed for controls a parent element covers -- e.g. a link inside a UI5
+    // table cell, where the cell intercepts pointer events.
+    await page.click(selector, force === true ? { force: true } : undefined);
 
     res.json({ success: true });
   } catch (err) {
@@ -312,7 +315,16 @@ app.get('/snapshot', async (req, res) => {
     // ariaSnapshot is the current API (page.accessibility was removed in
     // Playwright 1.49+). It returns a YAML tree of roles + accessible names
     // and crosses shadow boundaries, so shadow-DOM form fields show up.
-    const aria = await page.locator('body').ariaSnapshot();
+    // Snapshot the main frame AND every child iframe. SAP renders the agent
+    // editor form inside an iframe, and ariaSnapshot / getBy* locators do not
+    // cross iframe boundaries the way they cross shadow DOM.
+    let aria = '';
+    for (const f of page.frames()) {
+      try {
+        const part = await f.locator('body').ariaSnapshot();
+        if (part && part.trim()) aria += `# frame ${f.url().slice(0, 100)}\n${part}\n\n`;
+      } catch (_) { /* frame detached or cross-origin -- skip */ }
+    }
     res.json({ aria });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -334,15 +346,18 @@ app.post('/fill-by-label', async (req, res) => {
     if (!page) return res.status(409).json(NO_PAGE_ERR);
 
     const exactOpt = exact === true;
-    let loc = page.getByLabel(label, { exact: exactOpt });
-    if ((await loc.count()) === 0) {
-      loc = page.getByRole(role || 'textbox', { name: label, exact: exactOpt });
+    // Search the main frame and every iframe (the agent form is in an iframe).
+    for (const f of page.frames()) {
+      let loc = f.getByLabel(label, { exact: exactOpt });
+      if ((await loc.count()) === 0) {
+        loc = f.getByRole(role || 'textbox', { name: label, exact: exactOpt });
+      }
+      if ((await loc.count()) > 0) {
+        await loc.first().fill(text || '');
+        return res.json({ success: true });
+      }
     }
-    if ((await loc.count()) === 0) {
-      return res.status(404).json({ error: `No field found for label "${label}"` });
-    }
-    await loc.first().fill(text || '');
-    res.json({ success: true, matched: await loc.count() });
+    return res.status(404).json({ error: `No field found for label "${label}"` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -355,19 +370,22 @@ app.post('/fill-by-label', async (req, res) => {
 // to /fill-by-label. Example: { "role": "link", "name": "Invoice Reader" }.
 app.post('/click-by-role', async (req, res) => {
   try {
-    const { role, name, exact } = req.body || {};
+    const { role, name, exact, force } = req.body || {};
     if (!role) return res.status(400).json({ error: 'Missing role' });
 
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
 
     const exactOpt = exact === true;
-    const loc = name ? page.getByRole(role, { name, exact: exactOpt }) : page.getByRole(role);
-    if ((await loc.count()) === 0) {
-      return res.status(404).json({ error: `No ${role} found${name ? ` named "${name}"` : ''}` });
+    // Search the main frame and every iframe.
+    for (const f of page.frames()) {
+      const loc = name ? f.getByRole(role, { name, exact: exactOpt }) : f.getByRole(role);
+      if ((await loc.count()) > 0) {
+        await loc.first().click(force === true ? { force: true } : undefined);
+        return res.json({ success: true });
+      }
     }
-    await loc.first().click();
-    res.json({ success: true, matched: await loc.count() });
+    return res.status(404).json({ error: `No ${role} found${name ? ` named "${name}"` : ''}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
