@@ -134,18 +134,50 @@ if (-not $chromeFound) {
     }
 }
 
-# 4. Locate or fetch the bridge ------------------------------------------------
-# If this script lives inside a bridge checkout (scripts/ next to package.json),
-# use that. Otherwise clone the public repo into %USERPROFILE%\chrome-agent-bridge.
+# 4. Install the bridge to a STABLE location -----------------------------------
+# The bridge must never run from wherever the user happened to extract the ZIP
+# (Downloads, a temp folder, a USB stick). If autostart points at Downloads and
+# the user later clears Downloads, the bridge silently dies. So we always end up
+# running from a canonical per-user install dir and treat the extracted/cloned
+# copy as a disposable source.
+#
+#   Install dir: %LOCALAPPDATA%\Programs\ChromeAgentBridge   (no admin needed)
+#
+# If this script already lives in the install dir, we update in place. If it
+# lives somewhere else (the normal "extracted to Downloads" case), we copy the
+# sources in. If there are no local sources at all, we clone from GitHub
+# straight into the install dir.
+$InstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\ChromeAgentBridge'
+
+function Copy-BridgeSources {
+    param([string]$Source, [string]$Dest)
+    # robocopy is built into every Windows since Vista and handles excludes +
+    # long paths far more reliably than Copy-Item. Exit codes 0-7 are success
+    # (1 = files copied, 3 = copied + extras, etc.); 8+ is a real failure.
+    New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+    & robocopy $Source $Dest /E /PURGE /XD node_modules .git /XF *.log /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed copying sources to $Dest (exit $LASTEXITCODE)" }
+    $global:LASTEXITCODE = 0   # normalize so later success checks don't trip
+}
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoCandidate = (Resolve-Path "$ScriptDir\.." -ErrorAction SilentlyContinue).Path
+
 if ($RepoCandidate -and (Test-Path "$RepoCandidate\package.json") -and (Test-Path "$RepoCandidate\gateway")) {
-    $RepoRoot = $RepoCandidate
-    Write-Ok "Using bridge sources at $RepoRoot"
+    if ($RepoCandidate.TrimEnd('\') -ieq $InstallRoot.TrimEnd('\')) {
+        $RepoRoot = $InstallRoot
+        Write-Ok "Already installed at $RepoRoot -- updating in place"
+    } else {
+        Write-Step "Copying bridge to a stable location: $InstallRoot"
+        Copy-BridgeSources -Source $RepoCandidate -Dest $InstallRoot
+        $RepoRoot = $InstallRoot
+        Write-Ok "Installed to $RepoRoot"
+        Write-Ok "Source folder '$RepoCandidate' is no longer needed -- safe to delete."
+    }
 } else {
-    Write-Step "No local bridge sources next to this script. Cloning from GitHub..."
-    $RepoRoot = Join-Path $env:USERPROFILE 'chrome-agent-bridge'
-    if (Test-Path $RepoRoot) {
+    Write-Step "No local bridge sources next to this script. Cloning from GitHub into the install dir..."
+    $RepoRoot = $InstallRoot
+    if (Test-Path "$RepoRoot\.git") {
         Write-Step "Existing checkout at $RepoRoot -- pulling latest"
         Push-Location $RepoRoot
         try {
@@ -173,7 +205,7 @@ if ($RepoCandidate -and (Test-Path "$RepoCandidate\package.json") -and (Test-Pat
             exit 1
         }
     }
-    Write-Ok "Cloned to $RepoRoot"
+    Write-Ok "Bridge sources at $RepoRoot"
 }
 
 # 5. npm install ---------------------------------------------------------------

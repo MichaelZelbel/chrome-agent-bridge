@@ -152,15 +152,27 @@ app.get('/screenshot', async (req, res) => {
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
 
-    // Minimal screenshot config -- newer Playwright (1.50+) is strict
-    // about page-stability when `animations: 'disabled'` is set and hangs
-    // indefinitely on sites with continuous JS animations (LinkedIn feed,
-    // Discord realtime, etc). Default behaviour without these options
-    // returns immediately on the current viewport state.
-    const buffer = await page.screenshot({
-      fullPage: false,
-      timeout: 8000
-    });
+    // Capture via a raw CDP session instead of page.screenshot(). Playwright's
+    // page.screenshot() waits for fonts to load and for the page to reach a
+    // stable state before snapping; on SPAs with a perpetual spinner or a
+    // never-resolving font promise (SAP Fiori, Discord, LinkedIn) that wait
+    // never completes and the call times out -- leaving the agent blind
+    // exactly when it most needs to see. Page.captureScreenshot grabs the
+    // current viewport pixels immediately, regardless of animation state.
+    let buffer;
+    try {
+      const context = await getContext();
+      const session = await context.newCDPSession(page);
+      try {
+        const { data } = await session.send('Page.captureScreenshot', { format: 'png' });
+        buffer = Buffer.from(data, 'base64');
+      } finally {
+        await session.detach().catch(() => {});
+      }
+    } catch (cdpErr) {
+      // Fall back to Playwright's own screenshot if the CDP path is unavailable.
+      buffer = await page.screenshot({ fullPage: false, timeout: 8000 });
+    }
 
     res.set('Content-Type', 'image/png');
     res.send(buffer);
@@ -209,6 +221,153 @@ app.post('/press', async (req, res) => {
     await page.keyboard.press(key);
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Multi-tab support -------------------------------------------------
+// The bridge normally drives a single page (see newBridgePage). But some
+// apps open a NEW tab in response to a click -- e.g. SAP Build launches its
+// project editor in a separate tab. When that happens the bridge is left
+// pointing at the old page and /content + /screenshot keep showing the wrong
+// thing. /tabs lists every tab in the controlled context; /tab switches the
+// bridge to one of them by index or url substring. Switching is explicit --
+// the bridge never auto-follows a new tab, so the user's own login tabs
+// (Discord, LinkedIn, ...) are never hijacked.
+
+app.get('/tabs', async (req, res) => {
+  try {
+    const context = await getContext();
+    const pages = context.pages();
+    const tabs = [];
+    for (let i = 0; i < pages.length; i++) {
+      let title = '';
+      try {
+        title = await Promise.race([
+          pages[i].title(),
+          new Promise((resolve) => setTimeout(() => resolve(''), 1500)),
+        ]);
+      } catch (_) { /* title read failed -- leave blank */ }
+      tabs.push({ index: i, url: pages[i].url(), title, active: pages[i] === bridgePage });
+    }
+    res.json({ tabs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/tab', async (req, res) => {
+  try {
+    const { index, url } = req.body || {};
+    const context = await getContext();
+    const pages = context.pages();
+
+    let target = null;
+    if (typeof index === 'number') target = pages[index];
+    else if (url) target = pages.find((p) => p.url().includes(url));
+
+    if (!target) {
+      return res.status(404).json({
+        error: 'No matching tab',
+        tabs: pages.map((p, i) => ({ index: i, url: p.url() })),
+      });
+    }
+
+    bridgePage = target;
+    bridgePage.setDefaultTimeout(15000);
+    await target.bringToFront().catch(() => {});
+    res.json({ success: true, url: target.url() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Wait for a selector to appear before acting -- avoids sleep-and-pray on
+// SPAs that render asynchronously after a click or navigation.
+app.post('/wait', async (req, res) => {
+  try {
+    const { selector, timeout } = req.body || {};
+    if (!selector) return res.status(400).json({ error: 'Missing selector' });
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+    await page.waitForSelector(selector, { timeout: timeout || 15000 });
+    res.json({ success: true, found: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dump the accessibility tree of the current page. /content only serializes
+// the light DOM, so fields rendered inside a web component's shadow root
+// (SAP Fiori / UI5 forms, etc.) are invisible to it. The accessibility
+// snapshot crosses shadow boundaries and reports each node's role, name, and
+// value -- enough to locate a "textbox" named "Instructions" and then act on
+// it with /fill-by-label. Pass ?interestingOnly=false to include every node.
+app.get('/snapshot', async (req, res) => {
+  try {
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+    // ariaSnapshot is the current API (page.accessibility was removed in
+    // Playwright 1.49+). It returns a YAML tree of roles + accessible names
+    // and crosses shadow boundaries, so shadow-DOM form fields show up.
+    const aria = await page.locator('body').ariaSnapshot();
+    res.json({ aria });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fill a field by its accessible label/name rather than a CSS selector. This
+// is the companion to /snapshot: shadow-DOM form fields have no reachable CSS
+// selector in the light DOM, but Playwright's accessibility-aware locators
+// (getByLabel / getByRole) cross shadow boundaries. Tries label association
+// first, then a textbox with that accessible name. `exact` defaults to false
+// (case-insensitive substring) so "Instructions" matches "Instructions:".
+app.post('/fill-by-label', async (req, res) => {
+  try {
+    const { label, text, exact, role } = req.body || {};
+    if (!label) return res.status(400).json({ error: 'Missing label' });
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    const exactOpt = exact === true;
+    let loc = page.getByLabel(label, { exact: exactOpt });
+    if ((await loc.count()) === 0) {
+      loc = page.getByRole(role || 'textbox', { name: label, exact: exactOpt });
+    }
+    if ((await loc.count()) === 0) {
+      return res.status(404).json({ error: `No field found for label "${label}"` });
+    }
+    await loc.first().fill(text || '');
+    res.json({ success: true, matched: await loc.count() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Click a control by ARIA role + accessible name. The /click endpoint takes a
+// CSS/text selector, which can't reach controls that only exist inside a web
+// component's shadow root (SAP Fiori grids, links, buttons). getByRole is
+// accessibility-aware and crosses shadow boundaries -- the click counterpart
+// to /fill-by-label. Example: { "role": "link", "name": "Invoice Reader" }.
+app.post('/click-by-role', async (req, res) => {
+  try {
+    const { role, name, exact } = req.body || {};
+    if (!role) return res.status(400).json({ error: 'Missing role' });
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    const exactOpt = exact === true;
+    const loc = name ? page.getByRole(role, { name, exact: exactOpt }) : page.getByRole(role);
+    if ((await loc.count()) === 0) {
+      return res.status(404).json({ error: `No ${role} found${name ? ` named "${name}"` : ''}` });
+    }
+    await loc.first().click();
+    res.json({ success: true, matched: await loc.count() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
