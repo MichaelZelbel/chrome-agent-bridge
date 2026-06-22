@@ -23,13 +23,21 @@ logged-in Chrome.
 
 | Tool | Bridge endpoint | Purpose |
 |------|-----------------|---------|
-| `pc_browser_open(url)`            | `POST /goto`       | Navigate the user's real Chrome to a URL |
-| `pc_browser_read()`               | `GET /content`     | Return the current page's HTML (truncated if large) |
-| `pc_browser_screenshot()`         | `GET /screenshot`  | Screenshot the page (returned as an image) |
-| `pc_browser_click(selector)`      | `POST /click`      | Click an element |
-| `pc_browser_type(selector, text)` | `POST /type`       | Fill text into an element |
-| `pc_browser_press(key)`           | `POST /press`      | Press a keyboard key (e.g. `Enter`) |
-| `pc_browser_health()`             | `GET /health`      | Check the bridge is reachable |
+| `pc_browser_open(url)`            | `POST /goto`          | Navigate the user's real Chrome to a URL |
+| `pc_browser_read()`               | `GET /content`        | Return the current page's HTML (truncated if large) |
+| `pc_browser_screenshot()`         | `GET /screenshot`     | Screenshot the page (returned as an image) |
+| `pc_browser_click(selector)`      | `POST /click`         | Click an element by CSS selector |
+| `pc_browser_type(selector, text)` | `POST /type`          | Fill text into an element |
+| `pc_browser_press(key)`           | `POST /press`         | Press a keyboard key (e.g. `Enter`) |
+| `pc_browser_health()`             | `GET /health`         | Check the bridge is reachable |
+| `pc_browser_tabs()`               | `GET /tabs`           | List open tabs (index, url, title, active) |
+| `pc_browser_switch_tab(index?, url?)` | `POST /tab`       | Switch the active tab by index or URL substring |
+| `pc_browser_wait(selector, timeout?)` | `POST /wait`      | Wait for a selector to appear (SPA-safe) |
+| `pc_browser_snapshot()`           | `GET /snapshot`       | Accessibility tree across shadow DOM & iframes |
+| `pc_browser_fill_by_label(label, text, exact?, role?)` | `POST /fill-by-label` | Fill a field by accessible label (shadow/iframe) |
+| `pc_browser_click_by_role(role, name?, exact?, force?)` | `POST /click-by-role` | Click a control by ARIA role + name |
+| `pc_browser_click_by_text(text, exact?, tag?, nth?)` | `POST /click-by-text` | Click an element by visible text (role-less SPAs) |
+| `pc_browser_eval(js, frame?)`     | `POST /eval`          | Run a JS expression in the page or a child frame |
 
 ## Install
 

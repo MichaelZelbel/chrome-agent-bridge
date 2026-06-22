@@ -1,6 +1,6 @@
 {
   "name": "chrome-agent-bridge-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server exposing the Chrome Agent Bridge as agent tools over stdio. A thin proxy over the bridge's HTTP API — it does not modify the bridge, Chrome, or the PC-side gateway.",
   "type": "module",
   "main": "server.js",

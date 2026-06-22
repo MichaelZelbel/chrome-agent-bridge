@@ -69,7 +69,7 @@ async function callJson(method, path, body) {
   return textResult(text, !res.ok);
 }
 
-const server = new McpServer({ name: "chrome-agent-bridge", version: "0.1.0" });
+const server = new McpServer({ name: "chrome-agent-bridge", version: "0.2.0" });
 
 server.registerTool(
   "pc_browser_open",
@@ -176,6 +176,138 @@ server.registerTool(
     inputSchema: {},
   },
   async () => callJson("GET", "/health")
+);
+
+server.registerTool(
+  "pc_browser_tabs",
+  {
+    title: "List open browser tabs",
+    description:
+      "List every open tab in the user's Chrome (index, url, title, and which " +
+      "one is active). Use before pc_browser_switch_tab to find the tab you want.",
+    inputSchema: {},
+  },
+  async () => callJson("GET", "/tabs")
+);
+
+server.registerTool(
+  "pc_browser_switch_tab",
+  {
+    title: "Switch the active tab",
+    description:
+      "Make a different tab the active one for subsequent actions. Select it by " +
+      "its numeric index (from pc_browser_tabs) or by a URL substring. After " +
+      "switching, the other pc_browser_* tools act on this tab.",
+    inputSchema: {
+      index: z.number().int().optional().describe("Tab index from pc_browser_tabs"),
+      url: z.string().optional().describe("URL substring to match a tab (alternative to index)"),
+    },
+  },
+  async ({ index, url }) => callJson("POST", "/tab", { index, url })
+);
+
+server.registerTool(
+  "pc_browser_wait",
+  {
+    title: "Wait for an element to appear",
+    description:
+      "Wait until a CSS selector appears on the page before continuing. Use this " +
+      "instead of guessing on SPAs (SAP Fiori, etc.) that render asynchronously " +
+      "after a click or navigation. Returns once found or errors on timeout.",
+    inputSchema: {
+      selector: z.string().describe("CSS selector to wait for"),
+      timeout: z.number().int().optional().describe("Timeout in ms (default 15000)"),
+    },
+  },
+  async ({ selector, timeout }) => callJson("POST", "/wait", { selector, timeout })
+);
+
+server.registerTool(
+  "pc_browser_snapshot",
+  {
+    title: "Accessibility snapshot (crosses shadow DOM & iframes)",
+    description:
+      "Return a YAML accessibility tree of the page: each node's role, name, and " +
+      "value, across shadow-DOM and iframe boundaries. pc_browser_read only sees " +
+      "the light DOM, so use this to locate shadow-DOM form fields (SAP Fiori / " +
+      "UI5) — then act with pc_browser_fill_by_label or pc_browser_click_by_role.",
+    inputSchema: {},
+  },
+  async () => callJson("GET", "/snapshot")
+);
+
+server.registerTool(
+  "pc_browser_fill_by_label",
+  {
+    title: "Fill a field by its accessible label",
+    description:
+      "Fill an input by its accessible label/name rather than a CSS selector. " +
+      "Crosses shadow-DOM and iframe boundaries, so it reaches fields that have " +
+      "no light-DOM selector (use pc_browser_snapshot to find the label). Tries " +
+      "label association first, then a textbox with that accessible name.",
+    inputSchema: {
+      label: z.string().describe("Accessible label/name of the field"),
+      text: z.string().describe("Text to fill in"),
+      exact: z.boolean().optional().describe("Exact match vs case-insensitive substring (default false)"),
+      role: z.string().optional().describe("ARIA role to match if label lookup fails (default 'textbox')"),
+    },
+  },
+  async ({ label, text, exact, role }) => callJson("POST", "/fill-by-label", { label, text, exact, role })
+);
+
+server.registerTool(
+  "pc_browser_click_by_role",
+  {
+    title: "Click a control by ARIA role + name",
+    description:
+      "Click a control by its ARIA role and accessible name (e.g. role 'link', " +
+      "name 'Invoice Reader'). Accessibility-aware and crosses shadow-DOM/iframe " +
+      "boundaries, so it reaches controls that pc_browser_click (CSS) cannot.",
+    inputSchema: {
+      role: z.string().describe("ARIA role, e.g. 'link', 'button', 'menuitem'"),
+      name: z.string().optional().describe("Accessible name of the control"),
+      exact: z.boolean().optional().describe("Exact name match vs substring (default false)"),
+      force: z.boolean().optional().describe("Force the click past actionability checks (default false)"),
+    },
+  },
+  async ({ role, name, exact, force }) => callJson("POST", "/click-by-role", { role, name, exact, force })
+);
+
+server.registerTool(
+  "pc_browser_click_by_text",
+  {
+    title: "Click an element by its visible text",
+    description:
+      "Click an element by its VISIBLE TEXT, regardless of ARIA role. Needed for " +
+      "role-less SPA controls (e.g. SAP Build lobby project tiles) that are " +
+      "invisible to pc_browser_click_by_role and the snapshot. Walks the real " +
+      "DOM (piercing shadow roots) in every frame and clicks the smallest match.",
+    inputSchema: {
+      text: z.string().describe("Visible text to match"),
+      exact: z.boolean().optional().describe("Full-text equality vs substring (default false)"),
+      tag: z.string().optional().describe("Optional tag filter, e.g. 'a', 'button'"),
+      nth: z.number().int().optional().describe("Pick the nth equally-specific match (default 0)"),
+    },
+  },
+  async ({ text, exact, tag, nth }) => callJson("POST", "/click-by-text", { text, exact, tag, nth })
+);
+
+server.registerTool(
+  "pc_browser_eval",
+  {
+    title: "Run JavaScript in the page",
+    description:
+      "Escape hatch: evaluate a JS expression in the page (or a named child " +
+      "frame) and return its JSON result. Use for SPAs the role/label/text " +
+      "helpers can't reach — inspecting shadow-DOM structure, reading state, " +
+      "dispatching events, or confirming an effect. Wrap multi-statement logic " +
+      "in an IIFE, e.g. (() => Array.from(document.querySelectorAll('a')).length).",
+    inputSchema: {
+      js: z.string().describe("JS expression to evaluate (wrap statements in an IIFE)"),
+      frame: z.string().optional().describe("URL substring selecting which frame to run in (default main frame)"),
+    },
+  },
+  async ({ js, frame }) => callJson("POST", "/eval", { js, frame })
 );
 
 async function main() {
