@@ -52,6 +52,14 @@ set "HOST=%CAB_GATEWAY_HOST%"
 set "PORT=%CAB_GATEWAY_PORT%"
 set "CDP_URL=http://%CAB_CDP_ADDRESS%:%CAB_CDP_PORT%"
 
+REM Hand the gateway what it needs to RELAUNCH Chrome if the CDP endpoint ever
+REM disappears (e.g. Chrome relaunched without the debug port after a background
+REM update). With these set, the gateway's watchdog kills any Chrome still
+REM holding THIS profile and restarts it with the right flags. Scoped to the
+REM dedicated profile only -- your personal Chrome (different profile) is never
+REM touched. Unset them to disable the watchdog.
+set "CAB_CHROME_BIN=%CHROME_EXE%"
+
 REM --- Start Chrome ---------------------------------------------------------
 echo Starting Chrome with remote debugging on %CAB_CDP_ADDRESS%:%CAB_CDP_PORT%
 echo Profile: %CAB_PROFILE_DIR%

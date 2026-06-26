@@ -82,6 +82,15 @@ export HOST="$GATEWAY_HOST"
 export PORT="$GATEWAY_PORT"
 export CDP_URL="http://$CDP_ADDRESS:$CDP_PORT"
 
+# Hand the gateway what it needs to RELAUNCH Chrome if the CDP endpoint ever
+# disappears (e.g. Chrome relaunched without the debug port after a background
+# update). With these set, the gateway's watchdog kills any Chrome still holding
+# THIS profile and restarts it with the right flags. Scoped to the dedicated
+# profile only -- your personal Chrome (different profile) is never touched.
+# Unset them to disable the watchdog.
+export CAB_CHROME_BIN="$CHROME_BIN"
+export CAB_PROFILE_DIR="$USER_DATA_DIR"
+
 mkdir -p "$USER_DATA_DIR"
 
 # --- Start Chrome -----------------------------------------------------------

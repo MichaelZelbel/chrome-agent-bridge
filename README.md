@@ -352,6 +352,13 @@ The gateway reconnects to Chrome on every request — there is no global
 stale page object — and never calls `browser.close()`, so your real Chrome
 session is never killed by an agent action.
 
+When started via the launcher, the gateway also runs a **watchdog**: if the CDP
+endpoint disappears (e.g. Chrome relaunched without `--remote-debugging-port`
+after a background update), it kills any Chrome still holding the **dedicated**
+profile and relaunches it with the right flags, so the bridge self-heals. It is
+scoped to the dedicated profile only, and is disabled when you run the gateway
+by hand. See [`docs/troubleshooting.md`](docs/troubleshooting.md#chrome-updated-and-the-bridge-lost-its-connection).
+
 ### Configuration
 
 All env vars are optional:
@@ -361,6 +368,14 @@ All env vars are optional:
 | `HOST`    | `0.0.0.0`                | Set to `127.0.0.1` for local-only.                 |
 | `PORT`    | `3007`                   | Gateway listen port.                               |
 | `CDP_URL` | `http://127.0.0.1:9222`  | Where the gateway connects to Chrome. Keep local.  |
+| `CAB_CHROME_BIN` | _(unset)_         | Chrome binary path. Set by the launcher; enables the relaunch watchdog. |
+| `CAB_PROFILE_DIR` | _(unset)_        | Dedicated Chrome profile dir. Set by the launcher; the watchdog kill/relaunch is scoped to it. |
+| `CAB_CHROME_EXTRA_ARGS` | _(empty)_  | Extra Chrome flags appended when the watchdog relaunches Chrome. |
+| `CAB_WATCHDOG_COOLDOWN_MS` | `20000` | Minimum gap between watchdog relaunch attempts.   |
+
+The watchdog activates only when **both** `CAB_CHROME_BIN` and `CAB_PROFILE_DIR`
+are set (the launcher sets them). Run the gateway by hand without them and it
+never spawns or kills Chrome — behaving exactly as before.
 
 ---
 

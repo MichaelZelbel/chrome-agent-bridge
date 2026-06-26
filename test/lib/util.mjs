@@ -8,7 +8,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 // Locate a Chrome/Chromium binary to drive over CDP. We try, in order, any
 // Playwright-downloaded Chromium (so CI that ran `playwright install` works)
@@ -184,6 +187,25 @@ export class McpStdioClient {
     try { this.proc.stdin.end(); } catch { /* already closed */ }
     try { this.proc.kill(); } catch { /* already gone */ }
   }
+}
+
+// Kill every Chrome process whose command line references a profile dir. Used
+// to clean up Chrome instances the gateway watchdog relaunched (which the test
+// does not hold a handle to). Scoped to the given profile path only.
+export async function killChromeByProfile(profileDir) {
+  try {
+    if (process.platform === 'win32') {
+      const psLiteral = "'" + profileDir.replace(/'/g, "''") + "'";
+      const ps =
+        `$p=${psLiteral}; ` +
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like "*$p*" } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 10000 });
+    } else {
+      await execFileAsync('pkill', ['-f', `--user-data-dir=${profileDir}`], { timeout: 10000 }).catch(() => {});
+    }
+  } catch { /* nothing matched -- fine */ }
 }
 
 // Kill a process tree. On Windows child.kill() leaves Chrome's child processes

@@ -22,15 +22,17 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getFreePort, startStaticServer, poll, McpStdioClient, killTree, findInstalledChrome } from './lib/util.mjs';
+import { getFreePort, startStaticServer, poll, McpStdioClient, killTree, killChromeByProfile, findInstalledChrome } from './lib/util.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const INNER = 'inner.html'; // URL substring selecting the innermost frame
 
 let staticSrv;     // { url, close }
+let chromeExe;     // resolved Chrome/Chromium binary
 let chromeProc;    // raw chromium process
 let userDataDir;
+let CDP_PORT;      // Chrome CDP port (shared with the gateway watchdog)
 let gateway;       // gateway child process
 let mcp;           // McpStdioClient
 let GW;            // gateway base URL, e.g. http://127.0.0.1:NNNN
@@ -66,12 +68,12 @@ before(async () => {
   HARNESS_URL = staticSrv.url + '/outer.html';
 
   // 2. Real Chrome/Chromium with CDP, mimicking the production launcher.
-  const chromeExe = findInstalledChrome();
+  chromeExe = findInstalledChrome();
   assert.ok(chromeExe, 'No Chrome/Chromium binary found. Install Chrome or run `npx playwright install chromium`.');
-  const cdpPort = await getFreePort();
+  CDP_PORT = await getFreePort();
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cab-test-profile-'));
   chromeProc = spawn(chromeExe, [
-    `--remote-debugging-port=${cdpPort}`,
+    `--remote-debugging-port=${CDP_PORT}`,
     '--remote-debugging-address=127.0.0.1',
     '--disable-component-update', // mirror the production launcher's flag set
     `--user-data-dir=${userDataDir}`,
@@ -86,11 +88,13 @@ before(async () => {
 
   // Wait for the CDP endpoint to answer.
   await poll(async () => {
-    const res = await fetch(`http://127.0.0.1:${cdpPort}/json/version`);
+    const res = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`);
     return res.ok;
   }, { label: 'Chromium CDP endpoint', timeout: 30000 });
 
-  // 3. The actual gateway, connected to that Chromium.
+  // 3. The actual gateway, connected to that Chromium. We also hand it the
+  // watchdog knobs (binary + profile + headless extra arg) so the recovery
+  // test can verify the gateway relaunches Chrome on its own.
   const gwPort = await getFreePort();
   GW = `http://127.0.0.1:${gwPort}`;
   gateway = spawn(process.execPath, [path.join(ROOT, 'gateway', 'index.js')], {
@@ -98,7 +102,11 @@ before(async () => {
       ...process.env,
       HOST: '127.0.0.1',
       PORT: String(gwPort),
-      CDP_URL: `http://127.0.0.1:${cdpPort}`,
+      CDP_URL: `http://127.0.0.1:${CDP_PORT}`,
+      CAB_CHROME_BIN: chromeExe,
+      CAB_PROFILE_DIR: userDataDir,
+      CAB_CHROME_EXTRA_ARGS: '--headless=new --no-first-run --no-default-browser-check',
+      CAB_WATCHDOG_COOLDOWN_MS: '2000',
     },
     stdio: 'ignore',
   });
@@ -127,6 +135,9 @@ after(async () => {
   if (mcp) mcp.close();
   killTree(gateway);
   killTree(chromeProc);
+  // The watchdog may have relaunched a Chrome we hold no handle to; kill any
+  // Chrome still on the temp profile so nothing leaks.
+  if (userDataDir) await killChromeByProfile(userDataDir);
   if (staticSrv) await staticSrv.close();
   if (userDataDir) {
     try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -322,4 +333,62 @@ test('smoke: MCP exposes the new tools alongside the originals', async () => {
   ]) {
     assert.ok(names.includes(expected), `MCP should expose ${expected}; got ${names.join(', ')}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 5. Watchdog: the gateway self-heals when Chrome's CDP endpoint disappears
+//    (crash / closed / relaunched-without-flags after a background update).
+//    Kept LAST because it kills and relaunches the shared Chrome.
+// ---------------------------------------------------------------------------
+test('watchdog: relaunches Chrome and recovers after the CDP endpoint vanishes', async () => {
+  // Healthy to start.
+  assert.equal((await api('GET', '/health')).json.status, 'ok');
+
+  // Simulate Chrome vanishing (e.g. relaunched without --remote-debugging-port).
+  killTree(chromeProc);
+  await poll(async () => {
+    const up = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).then((r) => r.ok).catch(() => false);
+    return up === false;
+  }, { label: 'CDP endpoint actually down', timeout: 20000, interval: 300 });
+
+  // The next requests drive the watchdog: it relaunches Chrome with the right
+  // flags on the dedicated profile, and the bridge reconnects on its own.
+  await poll(async () => (await api('GET', '/health')).json?.status === 'ok',
+    { label: 'gateway self-heals via watchdog', timeout: 45000, interval: 1000 });
+
+  // CDP is genuinely back, and the bridge can drive a page again.
+  assert.ok(await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).then((r) => r.ok).catch(() => false),
+    'CDP endpoint should be reachable again after watchdog relaunch');
+  const goto = await api('POST', '/goto', { url: HARNESS_URL });
+  assert.equal(goto.status, 200, goto.text);
+  assert.equal(goto.json.success, true);
+});
+
+test('watchdog: recovers even when a flag-less Chrome is holding the profile', async () => {
+  // Make sure we are healthy after the previous test, then take Chrome down so
+  // we control the starting state.
+  await poll(async () => (await api('GET', '/health')).json?.status === 'ok',
+    { label: 'healthy before flag-less test', timeout: 30000, interval: 500 });
+  await killChromeByProfile(userDataDir);
+  await poll(async () => (await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).then((r) => r.ok).catch(() => false)) === false,
+    { label: 'CDP down before flag-less holder', timeout: 20000, interval: 300 });
+
+  // Start a Chrome on the dedicated profile WITHOUT a debug port -- exactly the
+  // state after Chrome relaunches itself post-update. A naive relaunch would
+  // hand off to this instance (profile SingletonLock) and never open the port;
+  // the watchdog must kill it first.
+  const flagless = spawn(chromeExe, [
+    `--user-data-dir=${userDataDir}`,
+    '--no-first-run', '--no-default-browser-check', '--headless=new', 'about:blank',
+  ], { stdio: 'ignore' });
+  flagless.on('error', () => {});
+  await new Promise((r) => setTimeout(r, 2500)); // let it grab the profile lock
+  assert.equal(await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).then((r) => r.ok).catch(() => false), false,
+    'flag-less Chrome must not expose a CDP port');
+
+  // Watchdog kills the flag-less holder and relaunches with flags.
+  await poll(async () => (await api('GET', '/health')).json?.status === 'ok',
+    { label: 'watchdog recovers past a flag-less holder', timeout: 45000, interval: 1000 });
+  assert.ok(await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).then((r) => r.ok).catch(() => false),
+    'CDP endpoint should be reachable again after the watchdog cleared the holder');
 });

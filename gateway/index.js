@@ -1,5 +1,9 @@
 const express = require('express');
 const { chromium } = require('playwright');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
+
+const execFileAsync = promisify(execFile);
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -7,6 +11,116 @@ app.use(express.json({ limit: '1mb' }));
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '3007', 10);
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9222';
+
+// --- Chrome watchdog -------------------------------------------------------
+// When the launcher starts the gateway it passes the knobs needed to bring
+// Chrome back up. If Chrome dies, or -- the motivating case -- a background
+// binary update makes Chrome relaunch WITHOUT --remote-debugging-port, the CDP
+// endpoint vanishes and connectOverCDP fails forever even though "Chrome is
+// running". The watchdog kills any Chrome still holding our DEDICATED profile
+// (a fresh launch can't reopen the debug port while the profile's SingletonLock
+// is held by a flag-less instance) and relaunches it with the right flags, so
+// the bridge self-heals on the next request.
+//
+// It is OFF unless BOTH CAB_CHROME_BIN and CAB_PROFILE_DIR are provided -- so
+// running `node index.js` by hand never spawns or kills anything, and the
+// kill is always scoped to the exact dedicated profile path, never a blanket
+// "kill all Chrome" (your personal browser uses a different profile).
+const WATCHDOG_CHROME_BIN = process.env.CAB_CHROME_BIN || '';
+const WATCHDOG_PROFILE_DIR = process.env.CAB_PROFILE_DIR || '';
+const WATCHDOG_EXTRA_ARGS = (process.env.CAB_CHROME_EXTRA_ARGS || '').split(' ').filter(Boolean);
+const WATCHDOG_ENABLED = !!(WATCHDOG_CHROME_BIN && WATCHDOG_PROFILE_DIR);
+const RELAUNCH_COOLDOWN_MS = parseInt(process.env.CAB_WATCHDOG_COOLDOWN_MS || '20000', 10);
+let lastRelaunchAt = 0;
+let relaunchInFlight = false;
+
+function logLine(msg) {
+  console.log(`${new Date().toISOString()} ${msg}`);
+}
+
+// Kill every chrome process whose command line references our dedicated
+// profile directory -- and nothing else. Best-effort: if nothing matches (or
+// the query tool is unavailable) we simply move on and relaunch.
+async function killChromeOnProfile() {
+  const needle = WATCHDOG_PROFILE_DIR;
+  try {
+    if (process.platform === 'win32') {
+      const psLiteral = "'" + needle.replace(/'/g, "''") + "'";
+      const ps =
+        `$p=${psLiteral}; ` +
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like "*$p*" } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 10000 });
+    } else {
+      // pkill -f matches against the whole argv; the profile path is unique.
+      await execFileAsync('pkill', ['-f', `--user-data-dir=${needle}`], { timeout: 10000 }).catch(() => {});
+    }
+  } catch (_) { /* nothing matched, or tool unavailable -- ignore */ }
+}
+
+function spawnChrome(port, address) {
+  const args = [
+    `--remote-debugging-port=${port}`,
+    `--remote-debugging-address=${address}`,
+    '--disable-component-update',
+    `--user-data-dir=${WATCHDOG_PROFILE_DIR}`,
+    ...WATCHDOG_EXTRA_ARGS,
+  ];
+  const child = spawn(WATCHDOG_CHROME_BIN, args, { detached: true, stdio: 'ignore' });
+  child.on('error', (e) => console.error(`${new Date().toISOString()} [watchdog] Chrome spawn failed: ${e.message}`));
+  child.unref();
+}
+
+async function waitForCdp(port, address, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  const url = `http://${address}:${port}/json/version`;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return true;
+    } catch (_) { /* endpoint not up yet */ }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return false;
+}
+
+// Bring Chrome back with the right flags. Returns true if CDP is reachable
+// afterwards. Guarded by a cooldown + in-flight flag so concurrent requests
+// (e.g. the agent's /health poll) never trigger a relaunch storm.
+async function tryRelaunchChrome() {
+  if (!WATCHDOG_ENABLED || relaunchInFlight) return false;
+  const now = Date.now();
+  if (now - lastRelaunchAt < RELAUNCH_COOLDOWN_MS) return false;
+  relaunchInFlight = true;
+  lastRelaunchAt = now;
+  try {
+    const u = new URL(CDP_URL);
+    const port = u.port || '9222';
+    const address = u.hostname || '127.0.0.1';
+    logLine(`[watchdog] CDP ${CDP_URL} unreachable; restarting Chrome on profile ${WATCHDOG_PROFILE_DIR}`);
+    bridgePage = null;
+    await killChromeOnProfile();
+    await new Promise((r) => setTimeout(r, 500)); // let the profile lock release
+    spawnChrome(port, address);
+    const ok = await waitForCdp(port, address, 20000);
+    logLine(`[watchdog] Chrome ${ok ? 'is back on CDP' : 'did NOT come back in time'}`);
+    return ok;
+  } catch (e) {
+    console.error(`${new Date().toISOString()} [watchdog] error: ${e.message}`);
+    return false;
+  } finally {
+    relaunchInFlight = false;
+  }
+}
+
+function cdpConnectError(err) {
+  return new Error(
+    `Cannot connect to Chrome at ${CDP_URL}. ` +
+    `Make sure Chrome is running with --remote-debugging-port=9222 ` +
+    `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
+  );
+}
 
 // Request logging middleware. Without this, an agent that reports
 // "/goto timed out" gives us nothing to correlate against -- we don't know
@@ -67,24 +181,35 @@ let bridgePage = null;
 // browser.close(), so the real Chrome session is never killed.
 let cdpBrowser = null;
 
+// Connect to Chrome over CDP. If the first attempt fails, ask the watchdog to
+// bring Chrome back (a no-op when the watchdog is disabled) and try once more.
+async function connectWithWatchdog() {
+  try {
+    return await chromium.connectOverCDP(CDP_URL);
+  } catch (err) {
+    if (await tryRelaunchChrome()) {
+      try {
+        return await chromium.connectOverCDP(CDP_URL);
+      } catch (err2) {
+        throw cdpConnectError(err2);
+      }
+    }
+    throw cdpConnectError(err);
+  }
+}
+
 async function getContext() {
   if (!cdpBrowser || !cdpBrowser.isConnected()) {
-    try {
-      cdpBrowser = await chromium.connectOverCDP(CDP_URL);
-    } catch (err) {
-      cdpBrowser = null;
-      throw new Error(
-        `Cannot connect to Chrome at ${CDP_URL}. ` +
-        `Make sure Chrome is running with --remote-debugging-port=9222 ` +
-        `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
-      );
-    }
+    cdpBrowser = null;
+    const browser = await connectWithWatchdog();
     // If Chrome quits or the connection drops, discard the cached handle (and
-    // the now-stale bridge page) so the next request transparently reconnects.
-    cdpBrowser.on('disconnected', () => {
+    // the now-stale bridge page) so the next request transparently reconnects
+    // (and, with the watchdog, can relaunch Chrome).
+    browser.on('disconnected', () => {
       cdpBrowser = null;
       bridgePage = null;
     });
+    cdpBrowser = browser;
   }
   const context = cdpBrowser.contexts()[0];
   if (!context) {
