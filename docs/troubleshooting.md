@@ -58,6 +58,42 @@ Fix:
 
 ---
 
+## Chrome updated and the bridge lost its connection
+
+Symptom: everything worked, then after a while `/goto` (and friends) start
+returning `Cannot connect to Chrome at http://127.0.0.1:9222` even though both
+Chrome and the gateway are clearly still running.
+
+Cause: Chrome upgraded its own binary in the background (via **Google Update** on
+Windows, **Keystone** on macOS, or the **package manager** on Linux — none of
+which read Chrome's command line) and then **relaunched Chrome with its default
+command line**. The new Chrome process no longer has `--remote-debugging-port`,
+so its CDP endpoint is gone and the gateway cannot reconnect.
+
+Important: the launcher passes `--disable-component-update`, which stops *Chrome
+components* from churning mid-session, but **it does not and cannot stop the
+browser binary from being upgraded** — that is a separate OS-level updater.
+
+Fix (immediate): close all Chrome windows for the bridge profile, confirm none
+remain (`Get-Process chrome`), and re-run the launcher so Chrome comes back up
+*with* the debugging flags. (The gateway auto-reconnects once a flagged Chrome is
+running again.)
+
+Prevent it (choose your trade-off):
+
+- **Only ever start Chrome via the launcher**, and don't click Chrome's
+  "Relaunch to update" button in the bridge profile — let it relaunch through the
+  launcher instead.
+- **Disable Chrome auto-update at the OS level.** This is the only way to truly
+  stop the binary upgrade. On Windows it is a registry / Group Policy change
+  (`HKLM\SOFTWARE\Policies\Google\Update`, `UpdateDefault=0` plus the
+  per-app `Update{8A69D345-...}` value); on macOS, disable Keystone; on Linux,
+  pin/hold the Chrome package. **Trade-off:** you also stop Chrome *security*
+  updates, so only do this on a dedicated, locked-down automation profile and
+  update it manually on a schedule.
+
+---
+
 ## "Port already in use" / `EADDRINUSE`
 
 Another process is using port `3007` (or `9222`).

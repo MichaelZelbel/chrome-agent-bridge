@@ -55,9 +55,16 @@ set "CDP_URL=http://%CAB_CDP_ADDRESS%:%CAB_CDP_PORT%"
 REM --- Start Chrome ---------------------------------------------------------
 echo Starting Chrome with remote debugging on %CAB_CDP_ADDRESS%:%CAB_CDP_PORT%
 echo Profile: %CAB_PROFILE_DIR%
+REM --disable-component-update stops Chrome from swapping out components
+REM (Widevine, CRLSet, Origin Trials, ...) mid-session, which can briefly
+REM disrupt the page the agent is driving. NOTE: it does NOT stop Chrome from
+REM upgrading its own browser binary -- that is done by the separate Google
+REM Update service, which ignores Chrome's command line. See docs\troubleshooting.md
+REM ("Chrome updated and the bridge lost its connection").
 start "" "%CHROME_EXE%" ^
     --remote-debugging-port=%CAB_CDP_PORT% ^
     --remote-debugging-address=%CAB_CDP_ADDRESS% ^
+    --disable-component-update ^
     --user-data-dir="%CAB_PROFILE_DIR%"
 
 REM Give Chrome a moment to initialize the debugging endpoint.

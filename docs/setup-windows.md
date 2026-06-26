@@ -86,8 +86,11 @@ This:
 
 1. Locates `chrome.exe` under `Program Files`.
 2. Launches Chrome with `--remote-debugging-port=9222`,
-   `--remote-debugging-address=127.0.0.1`, and a dedicated `user-data-dir`
-   at `%LOCALAPPDATA%\ChromeAgentProfile`.
+   `--remote-debugging-address=127.0.0.1`, `--disable-component-update`, and a
+   dedicated `user-data-dir` at `%LOCALAPPDATA%\ChromeAgentProfile`.
+   (`--disable-component-update` stops mid-session component churn; it does
+   **not** stop Chrome upgrading its own binary — see
+   [`troubleshooting.md`](troubleshooting.md).)
 3. Waits 5 seconds.
 4. Starts the gateway on port `3007`.
 

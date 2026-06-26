@@ -73,6 +73,7 @@ before(async () => {
   chromeProc = spawn(chromeExe, [
     `--remote-debugging-port=${cdpPort}`,
     '--remote-debugging-address=127.0.0.1',
+    '--disable-component-update', // mirror the production launcher's flag set
     `--user-data-dir=${userDataDir}`,
     '--no-first-run',
     '--no-default-browser-check',

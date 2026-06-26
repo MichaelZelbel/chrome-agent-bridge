@@ -90,16 +90,23 @@ printf 'Profile: %s\n' "$USER_DATA_DIR"
 printf 'Binary:  %s\n' "$CHROME_BIN"
 
 # Detach Chrome so the script can move on. setsid (Linux) or `&` + disown (macOS).
+# --disable-component-update stops Chrome from swapping out components
+# (Widevine, CRLSet, Origin Trials, ...) mid-session, which can briefly disrupt
+# the page the agent is driving. NOTE: it does NOT stop Chrome from upgrading
+# its own browser binary -- that is done by the OS-level updater (Keystone on
+# macOS, the package manager on Linux), which ignores Chrome's command line.
 if command -v setsid >/dev/null 2>&1; then
   setsid -f "$CHROME_BIN" \
     --remote-debugging-port="$CDP_PORT" \
     --remote-debugging-address="$CDP_ADDRESS" \
+    --disable-component-update \
     --user-data-dir="$USER_DATA_DIR" \
     >/dev/null 2>&1 || true
 else
   "$CHROME_BIN" \
     --remote-debugging-port="$CDP_PORT" \
     --remote-debugging-address="$CDP_ADDRESS" \
+    --disable-component-update \
     --user-data-dir="$USER_DATA_DIR" \
     >/dev/null 2>&1 &
   disown 2>/dev/null || true
