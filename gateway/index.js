@@ -98,6 +98,17 @@ async function getBridgePage() {
   return null;
 }
 
+// Resolve which frame a command targets. `frame` is a URL substring; when it
+// matches a child iframe we return that frame, otherwise (or when omitted) we
+// fall back to the main frame. This is the exact resolution /eval has always
+// used, factored out so the frame-aware typing primitives can reach fields
+// nested in iframes (SAP opens its editors inside process-builder ->
+// design-studio iframes) the same way the existing helpers do.
+function resolveFrame(page, frame) {
+  if (!frame) return page.mainFrame();
+  return page.frames().find((f) => f.url().includes(frame)) || page.mainFrame();
+}
+
 async function newBridgePage(url) {
   const context = await getContext();
   // Reuse the existing bridge page if it's still alive -- this navigates
@@ -208,16 +219,169 @@ app.post('/click', async (req, res) => {
   }
 });
 
+// Type text into a field -- frame-aware and, by default, with TRUSTED
+// keystrokes. The original /type did page.fill(selector) on the top frame
+// only, which breaks two ways: (1) the field may live in a nested iframe (a
+// Monaco / UI5 editor inside SAP's process-builder -> design-studio frames),
+// which a top-frame selector can't reach; (2) fill() sets .value and fires a
+// single input event, which rich editors ignore because they listen for real
+// keydown/keypress events. This version resolves the frame, focuses the
+// element, optionally clears it, then replays the text. Params:
+//   selector (required)            CSS/text selector, resolved inside `frame`
+//   text                           text to enter (default "")
+//   frame   (string)               URL substring selecting a child frame (default main)
+//   mode    ("sequential"|"fill")  trusted keystrokes (default) vs fast value set
+//   clear   (bool)                 select-all + Delete before typing (default true)
+// Backward compatible: { selector, text } alone clears the field and ends with
+// exactly `text` in it -- the same observable result as the old page.fill --
+// now also returning the element's resulting value so callers can verify.
 app.post('/type', async (req, res) => {
   try {
-    const { selector, text } = req.body || {};
+    const { selector, text, frame, mode, clear } = req.body || {};
     if (!selector) return res.status(400).json({ error: 'Missing selector' });
 
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
-    await page.fill(selector, text || '');
+
+    const f = resolveFrame(page, frame);
+    const loc = f.locator(selector).first();
+    const value = text || '';
+
+    await loc.click();
+    if (clear !== false) {
+      await loc.press('Control+a');
+      await loc.press('Delete');
+    }
+    if (mode === 'fill') {
+      await loc.fill(value);
+    } else {
+      // pressSequentially sends real per-key events (delay lets UI5/Monaco
+      // keep up) -- the trusted-keystroke path editors actually accept.
+      await loc.pressSequentially(value, { delay: 10 });
+    }
+
+    // Read back what actually landed, without a second round-trip. Plain
+    // inputs/textareas expose .value; contenteditable / rich widgets expose
+    // their text via innerText.
+    let result = '';
+    try {
+      result = await loc.evaluate((el) => (el.value != null ? el.value : el.innerText));
+    } catch (_) { /* element detached after typing -- leave blank */ }
+
+    res.json({ success: true, value: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Type a whole string as TRUSTED keystrokes into whatever element currently
+// has focus -- no selector. Pairs with a focusing click (/click,
+// /click-by-text, or a /type that left the caret in place): focus once, then
+// send the entire string in a single call instead of one /press per character
+// (which turned a 30-char expression into ~60 round-trips). page.keyboard.type
+// dispatches real keydown/keypress/input events, so editors that ignore
+// programmatic value sets (Monaco, UI5, contenteditable) accept it. Params:
+//   text                   string to type (default "")
+//   pressEnterAfter (bool) press Enter when done (submit / accept a suggestion)
+app.post('/type-text', async (req, res) => {
+  try {
+    const { text, pressEnterAfter } = req.body || {};
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    await page.keyboard.type(text || '', { delay: 10 });
+    if (pressEnterAfter === true) await page.keyboard.press('Enter');
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fill a Monaco code editor (VS Code's editor, embedded by SAP Build and many
+// low-code tools) in ONE call. The editor's text lives in a Monaco "model",
+// not a normal <textarea>, so /type can't address it by selector. Two
+// strategies, selectable via `mode`:
+//   mode "api" (default): inside the frame, grab the Monaco editor instance
+//     (window.monaco.editor.getEditors()[0], else the first registered model
+//     behind a .monaco-editor node) and setValue(text). Fast and exact.
+//   mode "keystroke": click a .view-line to focus, Ctrl+A, Delete, then type
+//     the text as trusted keystrokes -- needed when the app only reacts to
+//     real key events (e.g. to drive its completion / token machinery).
+// Params:
+//   text                        text to put in the editor (default "")
+//   frame   (string)            URL substring selecting the editor's frame (default main)
+//   replace (bool)              replace the whole document (default true); false appends
+//   mode    ("api"|"keystroke") default "api"
+// Returns the editor's resulting value read back FROM THE MONACO MODEL, so the
+// caller verifies exactly what landed rather than trusting what we sent.
+app.post('/fill-monaco', async (req, res) => {
+  try {
+    const { text, frame, replace, mode } = req.body || {};
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    const f = resolveFrame(page, frame);
+    const value = text || '';
+    const doReplace = replace !== false;
+
+    if (mode === 'keystroke') {
+      const line = f.locator('.monaco-editor .view-line').first();
+      if ((await line.count()) === 0) {
+        return res.status(404).json({ error: 'No Monaco editor (.monaco-editor .view-line) found in this frame' });
+      }
+      await line.click();
+      if (doReplace) {
+        await page.keyboard.press('Control+a');
+        await page.keyboard.press('Delete');
+      } else {
+        await page.keyboard.press('Control+End');
+      }
+      await page.keyboard.type(value, { delay: 10 });
+    } else {
+      // API fast path: set the model value directly.
+      const setRes = await f.evaluate((args) => {
+        const ed = window.monaco && window.monaco.editor;
+        let model = null;
+        const eds = ed && ed.getEditors ? ed.getEditors() : [];
+        if (eds && eds.length) {
+          model = eds[0].getModel();
+        } else if (ed && ed.getModels) {
+          // Fallback: the model registered for the first .monaco-editor node.
+          const node = document.querySelector('.monaco-editor');
+          const models = ed.getModels();
+          if (node && models && models.length) model = models[0];
+        }
+        if (!model) return { ok: false, error: 'No Monaco editor/model found in this frame' };
+        if (args.replace) {
+          model.setValue(args.text);
+        } else {
+          const lastLine = model.getLineCount();
+          const lastCol = model.getLineMaxColumn(lastLine);
+          model.applyEdits([{
+            range: { startLineNumber: lastLine, startColumn: lastCol, endLineNumber: lastLine, endColumn: lastCol },
+            text: args.text,
+          }]);
+        }
+        return { ok: true };
+      }, { text: value, replace: doReplace });
+
+      if (!setRes.ok) return res.status(404).json({ error: setRes.error });
+    }
+
+    // Read the resulting value straight from the model so the caller sees
+    // exactly what the editor holds.
+    const result = await f.evaluate(() => {
+      const ed = window.monaco && window.monaco.editor;
+      const eds = ed && ed.getEditors ? ed.getEditors() : [];
+      if (eds && eds.length) return eds[0].getModel().getValue();
+      const models = ed && ed.getModels ? ed.getModels() : [];
+      return models && models.length ? models[0].getValue() : null;
+    });
+
+    res.json({ success: true, value: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -470,8 +634,7 @@ app.post('/eval', async (req, res) => {
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
 
-    let f = page.mainFrame();
-    if (frame) f = page.frames().find((x) => x.url().includes(frame)) || f;
+    const f = resolveFrame(page, frame);
     const result = await f.evaluate(js);
     res.json({ result });
   } catch (err) {

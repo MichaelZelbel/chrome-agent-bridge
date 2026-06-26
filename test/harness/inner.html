@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Harness — inner frame (Monaco)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 12px; }
+    #editor { width: 800px; height: 220px; border: 1px solid #444; }
+    label { display: block; margin: 8px 0 4px; }
+  </style>
+</head>
+<body>
+  <h3 id="inner-marker">inner document</h3>
+
+  <!-- (i) a plain input, two iframes deep -- exercises frame-aware /type -->
+  <label for="deep">deep input</label>
+  <input id="deep" type="text" size="60" />
+
+  <script>
+    // Record the value present when Enter is pressed, so the type-focused-text
+    // test can prove pressEnterAfter actually delivered a trusted Enter key.
+    window.__lastEnter = null;
+    document.getElementById('deep').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') window.__lastEnter = e.target.value;
+    });
+  </script>
+
+  <!-- (ii) a Monaco editor loaded from the public CDN, with a completion
+       provider exposing the function StringToNumber and the variable
+       netVarianceAbs -- exercises /fill-monaco (api + keystroke). -->
+  <div id="editor"></div>
+
+  <script>
+    // A no-op worker so Monaco never tries to fetch a cross-origin worker
+    // script from the CDN (which the harness origin can't load). The manual
+    // completion provider below needs no worker; this only silences errors.
+    self.MonacoEnvironment = {
+      getWorkerUrl: function () {
+        return 'data:text/javascript;charset=utf-8,' +
+          encodeURIComponent('self.onmessage=function(){};');
+      },
+    };
+    // Set true once Monaco has created the editor -- the test polls this.
+    window.__monacoReady = false;
+    window.__monacoError = null;
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"
+          onerror="window.__monacoError='loader.js failed to load (offline?)'"></script>
+  <script>
+    if (window.require) {
+      require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+      require(['vs/editor/editor.main'], function () {
+        // A dedicated expression language (mimics SAP's custom editor language)
+        // so the ONLY completion source is the provider below -- no built-in
+        // JS/TS worker competing for the suggest widget.
+        monaco.languages.register({ id: 'sapexpr' });
+        // Completion provider: the two identifiers SAP-style expressions use.
+        monaco.languages.registerCompletionItemProvider('sapexpr', {
+          provideCompletionItems: function () {
+            return {
+              suggestions: [
+                {
+                  label: 'StringToNumber',
+                  kind: monaco.languages.CompletionItemKind.Function,
+                  insertText: 'StringToNumber',
+                  detail: 'function StringToNumber(value)',
+                },
+                {
+                  label: 'netVarianceAbs',
+                  kind: monaco.languages.CompletionItemKind.Variable,
+                  insertText: 'netVarianceAbs',
+                  detail: 'variable netVarianceAbs',
+                },
+              ],
+            };
+          },
+        });
+        window.__editor = monaco.editor.create(document.getElementById('editor'), {
+          value: '',
+          language: 'sapexpr',
+          minimap: { enabled: false },
+          automaticLayout: true,
+          // Disable auto-closing so the keystroke path types exactly the
+          // characters sent -- otherwise Monaco would auto-insert a ')' and the
+          // readback would be non-deterministic. The api (setValue) path is
+          // unaffected by this.
+          autoClosingBrackets: 'never',
+          autoClosingQuotes: 'never',
+        });
+        window.__monacoReady = true;
+      }, function (err) {
+        window.__monacoError = String(err);
+      });
+    }
+  </script>
+</body>
+</html>

@@ -267,6 +267,25 @@ against neutral public sites (`example.com`, `google.com`).
 
 ---
 
+## Tests (developers)
+
+The repo ships an end-to-end test suite (Node's built-in test runner — no extra
+deps) that exercises the typing/editor primitives through **both** surfaces (the
+HTTP API and the MCP server) plus a smoke test for the pre-existing tools:
+
+```bash
+npm test          # node --test test/
+```
+
+It stands up the real stack: a static server for a nested-iframe + Monaco
+harness page, a real Chrome/Chromium driven over CDP, the actual
+[`gateway/index.js`](gateway/index.js), and the actual
+[`mcp/server.js`](mcp/server.js). It needs a Chrome or Chromium binary (system
+Chrome, or `npx playwright install chromium`) and outbound access to the Monaco
+CDN. See [`test/`](test).
+
+---
+
 ## API reference
 
 Base URL: `http://<host>:3007` (default port; configurable via `PORT`).
@@ -278,10 +297,56 @@ Base URL: `http://<host>:3007` (default port; configurable via `PORT`).
 | GET    | `/content`    | —                                                 | full page HTML (text)                |
 | GET    | `/screenshot` | —                                                 | PNG bytes (`image/png`)              |
 | POST   | `/click`      | `{ "selector": "<css>" }`                         | `{ "success": true }`                |
-| POST   | `/type`       | `{ "selector": "<css>", "text": "<text>" }`       | `{ "success": true }`                |
+| POST   | `/type`       | `{ "selector": "<css>", "text": "<text>", "frame"?, "mode"?, "clear"? }` | `{ "success": true, "value": "<resulting value>" }` |
+| POST   | `/type-text`  | `{ "text": "<text>", "pressEnterAfter"?: bool }`  | `{ "success": true }`                |
+| POST   | `/fill-monaco`| `{ "text": "<text>", "frame"?, "replace"?, "mode"? }` | `{ "success": true, "value": "<editor value>" }` |
 | POST   | `/press`      | `{ "key": "<key>" }`                              | `{ "success": true }`                |
 
 Errors return HTTP 4xx/5xx with `{ "error": "<message>" }`.
+
+#### Typing into nested iframes & code editors
+
+The `/click`, `/click-by-role`, `/click-by-text`, `/fill-by-label`, `/snapshot`
+and `/eval` endpoints are already **frame-aware** (they search every iframe, or
+take a `frame` URL-substring). The typing primitives complete the set for fields
+that live inside nested iframes or rich editors (e.g. a Monaco expression editor
+inside SAP Build's `process-builder` → `design-studio` frames):
+
+- **`/type`** is frame-aware and, by default, sends **trusted keystrokes**
+  (`pressSequentially`) so editors that ignore programmatic value-sets (Monaco,
+  SAP UI5, contenteditable) accept the input. Optional params:
+  `frame` (URL substring, default = main frame), `mode` (`"sequential"`
+  trusted keys = default, or `"fill"` fast value-set), `clear` (default `true`).
+  It now also returns the element's resulting `value`. **Backward compatible:**
+  `{ selector, text }` alone clears the field and ends with exactly `text` in it,
+  same as before.
+- **`/type-text`** types a whole string as trusted keystrokes into whatever
+  element currently has **focus** (no selector) — pair it with a focusing click
+  to enter a 30-char expression in one call instead of 30+ `/press` calls.
+  `pressEnterAfter` submits / accepts a suggestion.
+- **`/fill-monaco`** fills a Monaco editor in one call. `mode: "api"` (default)
+  sets the model value directly via `setValue` (fast, exact); `mode: "keystroke"`
+  clicks in and types trusted keystrokes (use when the app only reacts to real
+  key events). Returns the value read back **from the Monaco model**.
+  See [the Monaco note below](#a-note-on-monaco-setvalue-vs-autocomplete-tokens).
+
+##### A note on Monaco `setValue` vs. autocomplete tokens
+
+`/fill-monaco` with `mode: "api"` calls Monaco's `model.setValue(text)`, which
+stores **literal text** — verified by reading the model back. It does **not**
+run the editor's completion provider, so a typed reference is **not** auto-resolved
+into a recognized "token". Apps like SAP Build decorate Monaco with their own
+**data tokens** inserted via autocomplete; `setValue` bypasses that machinery.
+When you need a real token, drive the completion with keystrokes instead — there
+is no extra endpoint to learn, just compose the existing ones:
+
+1. `POST /fill-monaco { "frame": "...", "text": "netVar", "mode": "keystroke" }`
+   (or `/type-text`) to type the partial identifier,
+2. `POST /press { "key": "Control+Space" }` to open the suggest widget,
+3. `POST /press { "key": "Enter" }` to accept the focused suggestion.
+
+This recipe is covered by the test suite (it resolves `netVar` →
+`netVarianceAbs` against a Monaco completion provider).
 
 The gateway reconnects to Chrome on every request — there is no global
 stale page object — and never calls `browser.close()`, so your real Chrome
@@ -305,9 +370,10 @@ Prefer giving your agent **first-class browser tools** over teaching it to call
 this HTTP API by hand? The [`mcp/`](mcp) folder ships a small Model Context
 Protocol server that exposes `pc_browser_open`, `pc_browser_read`,
 `pc_browser_screenshot`, `pc_browser_click`, `pc_browser_type`,
-`pc_browser_press`, and `pc_browser_health` over stdio. It is a thin, additive
-proxy over the API above and does **not** change the gateway. See
-[`mcp/README.md`](mcp/README.md).
+`pc_browser_type_text`, `pc_browser_fill_monaco`, `pc_browser_press`,
+`pc_browser_health` (and the frame-aware `pc_browser_*` helpers) over stdio. It
+is a thin, additive proxy over the API above and does **not** change the
+gateway. See [`mcp/README.md`](mcp/README.md).
 
 ---
 

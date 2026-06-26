@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Harness — outer frame</title>
+</head>
+<body>
+  <h1 id="outer-marker">outer document</h1>
+  <!-- Nested frames mimic SAP Build's process-builder -> design-studio nesting:
+       outer.html embeds middle.html which embeds inner.html. The fields under
+       test live in the innermost document, two iframe boundaries deep. -->
+  <iframe id="middle" src="middle.html" width="900" height="600" style="border:1px solid #ccc"></iframe>
+</body>
+</html>

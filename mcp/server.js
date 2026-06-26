@@ -69,7 +69,7 @@ async function callJson(method, path, body) {
   return textResult(text, !res.ok);
 }
 
-const server = new McpServer({ name: "chrome-agent-bridge", version: "0.2.0" });
+const server = new McpServer({ name: "chrome-agent-bridge", version: "0.3.0" });
 
 server.registerTool(
   "pc_browser_open",
@@ -146,14 +146,67 @@ server.registerTool(
 server.registerTool(
   "pc_browser_type",
   {
-    title: "Type into an element",
-    description: "Fill text into an element (CSS selector) in the user's Chrome.",
+    title: "Type into an element (frame-aware, trusted keystrokes)",
+    description:
+      "Type text into an element (CSS selector) in the user's Chrome. Frame-aware " +
+      "and, by default, sends TRUSTED keystrokes (real key events) so rich editors " +
+      "that ignore programmatic value sets (Monaco, SAP UI5, contenteditable) " +
+      "accept it. Use `frame` to reach a field nested in an iframe. Returns the " +
+      "element's resulting value so you can verify what landed. Calling with just " +
+      "{ selector, text } behaves like before (clears, then enters the text).",
     inputSchema: {
-      selector: z.string().describe("CSS selector of the input/textarea"),
-      text: z.string().describe("Text to fill in"),
+      selector: z.string().describe("CSS selector of the input/textarea, resolved inside `frame`"),
+      text: z.string().describe("Text to enter"),
+      frame: z.string().optional().describe("URL substring selecting a child iframe (default main frame)"),
+      mode: z.enum(["sequential", "fill"]).optional().describe(
+        "'sequential' = trusted per-key events (default); 'fill' = fast value set"),
+      clear: z.boolean().optional().describe("Select-all + Delete before typing (default true)"),
     },
   },
-  async ({ selector, text }) => callJson("POST", "/type", { selector, text })
+  async ({ selector, text, frame, mode, clear }) =>
+    callJson("POST", "/type", { selector, text, frame, mode, clear })
+);
+
+server.registerTool(
+  "pc_browser_type_text",
+  {
+    title: "Type a string into the focused element (trusted keystrokes)",
+    description:
+      "Type a whole string as TRUSTED keystrokes into whatever element currently " +
+      "has focus — no selector. Pairs with a focusing click (pc_browser_click, " +
+      "pc_browser_click_by_text): click to focus, then send the entire string in " +
+      "ONE call instead of one pc_browser_press per character. Real key events, so " +
+      "Monaco / UI5 / contenteditable accept it. Optionally press Enter afterwards.",
+    inputSchema: {
+      text: z.string().describe("String to type into the focused element"),
+      pressEnterAfter: z.boolean().optional().describe("Press Enter when done (submit / accept a suggestion)"),
+    },
+  },
+  async ({ text, pressEnterAfter }) => callJson("POST", "/type-text", { text, pressEnterAfter })
+);
+
+server.registerTool(
+  "pc_browser_fill_monaco",
+  {
+    title: "Fill a Monaco code editor in one call",
+    description:
+      "Fill a Monaco code editor (VS Code's editor, embedded by SAP Build and many " +
+      "low-code tools) in ONE call. The text lives in a Monaco model, not a " +
+      "<textarea>, so pc_browser_type can't address it. mode 'api' (default) sets " +
+      "the model value directly (fast, exact); mode 'keystroke' clicks into the " +
+      "editor and types trusted keystrokes (use when the app only reacts to real " +
+      "key events, e.g. to trigger completion/token insertion). Use `frame` for an " +
+      "editor inside an iframe. Returns the value read back from the Monaco model.",
+    inputSchema: {
+      text: z.string().describe("Text to put in the editor"),
+      frame: z.string().optional().describe("URL substring selecting the editor's iframe (default main frame)"),
+      replace: z.boolean().optional().describe("Replace the whole document (default true); false appends"),
+      mode: z.enum(["api", "keystroke"]).optional().describe(
+        "'api' = setValue on the model (default); 'keystroke' = click + trusted typing"),
+    },
+  },
+  async ({ text, frame, replace, mode }) =>
+    callJson("POST", "/fill-monaco", { text, frame, replace, mode })
 );
 
 server.registerTool(
