@@ -11,8 +11,12 @@
 #   2. Kills anything listening on bridge ports 3007 + 3008 (covers
 #      old + new + custom-port installs in one go)
 #   3. Kills any orphan node.exe / chrome.exe processes referencing the
-#      bridge gateway or the dedicated Chrome profile
-#   4. Removes the default bridge folder at %USERPROFILE%\chrome-agent-bridge
+#      bridge gateway or the dedicated Chrome profile (but never the shell
+#      chain running this reset -- see the sweep's ancestry exemption)
+#   4. Removes the bridge folders: the install dir at
+#      %LOCALAPPDATA%\Programs\ChromeAgentBridge, the legacy location at
+#      %USERPROFILE%\chrome-agent-bridge, and the gateway log folder at
+#      %LOCALAPPDATA%\ChromeAgentBridge
 #   5. Asks (with default = NO) whether to also wipe the dedicated Chrome
 #      profile at %LOCALAPPDATA%\ChromeAgentProfile -- saying yes forgets
 #      all logged-in sessions (LinkedIn, Discord, etc) which is what you
@@ -72,7 +76,24 @@ $swept = 0
 $profilePath = Join-Path $env:LOCALAPPDATA 'ChromeAgentProfile'
 try {
     $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+
+    # Never kill our own shell chain. When the reset runs via
+    # `powershell -File ...\chrome-agent-bridge\scripts\reset-bridge.ps1`
+    # (or the irm one-liner is launched by a wrapper shell), the invoking
+    # process's command line contains the bridge marker and the sweep would
+    # terminate the reset itself mid-run, skipping the folder cleanup.
+    # Walk up from $PID and exempt self + every ancestor (issue #2).
+    $byId = @{}
+    foreach ($p in $procs) { $byId[[uint32]$p.ProcessId] = $p }
+    $ownChain = @{}
+    $cur = [uint32]$PID
+    while ($byId.ContainsKey($cur) -and -not $ownChain.ContainsKey($cur)) {
+        $ownChain[$cur] = $true
+        $cur = [uint32]$byId[$cur].ParentProcessId
+    }
+
     foreach ($p in $procs) {
+        if ($ownChain.ContainsKey([uint32]$p.ProcessId)) { continue }
         if (-not $p.CommandLine) { continue }
         if ($p.CommandLine -match 'chrome-agent-bridge' -or
             $p.CommandLine -like "*$profilePath*") {
@@ -90,19 +111,25 @@ try {
 }
 if ($swept -eq 0) { W-Ok "No stray bridge processes" }
 
-# 4. Remove default bridge folder ------------------------------------------
-W-Step "Removing default bridge folder..."
-$defaultRoot = Join-Path $env:USERPROFILE 'chrome-agent-bridge'
-if (Test-Path $defaultRoot) {
-    try {
-        Remove-Item $defaultRoot -Recurse -Force -ErrorAction Stop
-        W-Ok "removed $defaultRoot"
-    } catch {
-        W-Warn "could not fully remove $defaultRoot -- some files may be in use."
-        W-Warn "Try closing all related Explorer/Terminal windows and re-running."
+# 4. Remove bridge folders --------------------------------------------------
+W-Step "Removing bridge folders..."
+$bridgeDirs = @(
+    (Join-Path $env:LOCALAPPDATA 'Programs\ChromeAgentBridge')   # install dir (windows-easy-install.ps1)
+    (Join-Path $env:USERPROFILE  'chrome-agent-bridge')          # legacy install location
+    (Join-Path $env:LOCALAPPDATA 'ChromeAgentBridge')            # gateway logs
+)
+foreach ($dir in $bridgeDirs) {
+    if (Test-Path $dir) {
+        try {
+            Remove-Item $dir -Recurse -Force -ErrorAction Stop
+            W-Ok "removed $dir"
+        } catch {
+            W-Warn "could not fully remove $dir -- some files may be in use."
+            W-Warn "Try closing all related Explorer/Terminal windows and re-running."
+        }
+    } else {
+        W-Ok "no folder at $dir"
     }
-} else {
-    W-Ok "no folder at $defaultRoot"
 }
 
 # 5. Optional: wipe Chrome profile -----------------------------------------
@@ -138,8 +165,10 @@ $task = Get-ScheduledTask -TaskName 'ChromeAgentBridge' -ErrorAction SilentlyCon
 if ($task) { Write-Host "  [FAIL] Task 'ChromeAgentBridge' still registered" -ForegroundColor Red; $verify_ok = $false }
 else       { Write-Host "  [ ok ] Task removed" -ForegroundColor Green }
 
-if (Test-Path $defaultRoot) { Write-Host "  [FAIL] Folder still exists: $defaultRoot" -ForegroundColor Red; $verify_ok = $false }
-else                        { Write-Host "  [ ok ] Bridge folder gone" -ForegroundColor Green }
+foreach ($dir in $bridgeDirs) {
+    if (Test-Path $dir) { Write-Host "  [FAIL] Folder still exists: $dir" -ForegroundColor Red; $verify_ok = $false }
+    else                { Write-Host "  [ ok ] Folder gone: $dir" -ForegroundColor Green }
+}
 
 foreach ($port in 3007, 3008) {
     $still = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
