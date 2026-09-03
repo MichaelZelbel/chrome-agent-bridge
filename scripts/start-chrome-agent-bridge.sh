@@ -104,19 +104,35 @@ printf 'Binary:  %s\n' "$CHROME_BIN"
 # the page the agent is driving. NOTE: it does NOT stop Chrome from upgrading
 # its own browser binary -- that is done by the OS-level updater (Keystone on
 # macOS, the package manager on Linux), which ignores Chrome's command line.
+#
+# On an unattended Linux autologin, no keyring password is available. Chrome can
+# wait forever for the keyring instead of opening its CDP endpoint, so use its
+# basic local password store there. Dedicated bridge profiles and their host must
+# therefore be protected like any other unencrypted browser session.
+CHROME_SESSION_FLAGS=()
+if [ "$(uname -s)" = "Linux" ]; then
+  CHROME_SESSION_FLAGS+=(--password-store=basic)
+fi
+
 if command -v setsid >/dev/null 2>&1; then
   setsid -f "$CHROME_BIN" \
     --remote-debugging-port="$CDP_PORT" \
     --remote-debugging-address="$CDP_ADDRESS" \
     --disable-component-update \
+    --no-first-run \
+    "${CHROME_SESSION_FLAGS[@]}" \
     --user-data-dir="$USER_DATA_DIR" \
+    about:blank \
     >/dev/null 2>&1 || true
 else
   "$CHROME_BIN" \
     --remote-debugging-port="$CDP_PORT" \
     --remote-debugging-address="$CDP_ADDRESS" \
     --disable-component-update \
+    --no-first-run \
+    "${CHROME_SESSION_FLAGS[@]}" \
     --user-data-dir="$USER_DATA_DIR" \
+    about:blank \
     >/dev/null 2>&1 &
   disown 2>/dev/null || true
 fi
