@@ -65,6 +65,11 @@ jobs:
           chmod +x "$STAGE/scripts/install-autostart-linux.sh" 2>/dev/null || true
           chmod +x "$STAGE/scripts/uninstall-autostart-macos.sh" 2>/dev/null || true
           chmod +x "$STAGE/scripts/uninstall-autostart-linux.sh" 2>/dev/null || true
+          chmod +x "$STAGE/poster/wake.js" 2>/dev/null || true
+          chmod +x "$STAGE/poster/install-waker-linux.sh" 2>/dev/null || true
+          chmod +x "$STAGE/poster/install-waker-macos.sh" 2>/dev/null || true
+          chmod +x "$STAGE/poster/runners/claude.sh" 2>/dev/null || true
+          chmod +x "$STAGE/poster/runners/hermes.sh" 2>/dev/null || true
 
           echo "STAGE=$STAGE" >> "$GITHUB_ENV"
           echo "TAG=${{ steps.version.outputs.tag }}" >> "$GITHUB_ENV"
