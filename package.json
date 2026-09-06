@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node gateway/index.js",
     "dev": "node gateway/index.js",
-    "test": "node --test \"test/**/*.test.mjs\""
+    "test": "node --test \"test/**/*.test.mjs\" \"poster/test/**/*.test.mjs\"",
+    "test:unit": "node --test test/upload-and-auth.test.mjs poster/test/wake.test.mjs"
   },
   "keywords": [
     "chrome",
