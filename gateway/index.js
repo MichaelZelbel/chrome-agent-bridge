@@ -2,11 +2,17 @@ const express = require('express');
 const { chromium } = require('playwright');
 const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
+const upload = require('./lib/upload');
+const { readToken, makeTokenGuard } = require('./lib/auth');
 
 const execFileAsync = promisify(execFile);
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+// Optional bearer token (BRIDGE_TOKEN). Off by default; see lib/auth.js.
+app.use(makeTokenGuard(readToken()));
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '3007', 10);
@@ -751,6 +757,96 @@ app.post('/click-by-text', async (req, res) => {
 //   { "js": "(() => Array.from(document.querySelectorAll('a.project-title')).map(a=>a.textContent))" }
 // Optional `frame` is a URL substring selecting which frame to run in (default
 // main frame). Localhost-only bridge, so arbitrary eval is acceptable here.
+// --- File upload (POST /upload-file) --------------------------------------
+// Fetch a file from a URL and hand it to a file input on the bridge page, so
+// a remote agent can upload media without a shared filesystem. Three ways to
+// name the input: `label` (accessible label), `selector` (CSS), or `click`
+// (open the site's file chooser by clicking a control: {selector} or
+// {role, name}). The temp copy stays on disk for an hour, because the page
+// reads it when the form submits, not when the input is set; older copies
+// are swept on every call.
+app.post('/upload-file', async (req, res) => {
+  const parsed = upload.parseUploadRequest(req.body);
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const t = parsed.target;
+  try {
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    upload.cleanOldTemp();
+    fs.mkdirSync(upload.tempDir(), { recursive: true });
+    const tmp = upload.tempPathFor(t.url, t.filename);
+
+    let response;
+    try {
+      response = await fetch(t.url, { signal: AbortSignal.timeout(180000), redirect: 'follow' });
+    } catch (err) {
+      return res.status(502).json({ error: `Could not fetch ${t.url}: ${err.message}` });
+    }
+    if (!response.ok) {
+      return res.status(502).json({ error: `Could not fetch ${t.url}: HTTP ${response.status}` });
+    }
+    const limit = upload.maxBytes();
+    const declared = parseInt(response.headers.get('content-length') || '0', 10);
+    if (declared > limit) {
+      return res.status(413).json({ error: `File is ${declared} bytes, over the ${limit} byte limit` });
+    }
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length > limit) {
+      return res.status(413).json({ error: `File is ${buf.length} bytes, over the ${limit} byte limit` });
+    }
+    fs.writeFileSync(tmp, buf);
+    const file = path.basename(tmp);
+
+    // Way 1: the site opens its own chooser when a control is clicked.
+    if (t.click) {
+      const chooserPromise = page.waitForEvent('filechooser', { timeout: 15000 });
+      let clicked = false;
+      for (const f of page.frames()) {
+        const loc = t.click.selector
+          ? f.locator(t.click.selector)
+          : f.getByRole(t.click.role, t.click.name ? { name: t.click.name, exact: t.exact } : {});
+        if ((await loc.count()) > 0) {
+          await loc.first().click();
+          clicked = true;
+          break;
+        }
+      }
+      if (!clicked) {
+        chooserPromise.catch(() => {});
+        return res.status(404).json({ error: 'No control found to click for the file chooser' });
+      }
+      const chooser = await chooserPromise;
+      await chooser.setFiles(tmp);
+      return res.json({ success: true, bytes: buf.length, file, via: 'filechooser' });
+    }
+
+    // Way 2 and 3: a file input named by selector or by label. A hidden file
+    // input has no accessible label; when a frame holds exactly one, that is
+    // the one meant.
+    for (const f of page.frames()) {
+      let loc = null;
+      if (t.selector) {
+        loc = f.locator(t.selector);
+      } else {
+        loc = f.getByLabel(t.label, { exact: t.exact });
+        if ((await loc.count()) === 0) {
+          const inputs = f.locator('input[type=file]');
+          if ((await inputs.count()) === 1) loc = inputs;
+        }
+      }
+      if (loc && (await loc.count()) > 0) {
+        await loc.first().setInputFiles(tmp);
+        return res.json({ success: true, bytes: buf.length, file, via: t.selector ? 'selector' : 'label' });
+      }
+    }
+    const wanted = t.selector ? `selector "${t.selector}"` : `label "${t.label}"`;
+    return res.status(404).json({ error: `No file input found for ${wanted}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/eval', async (req, res) => {
   try {
     const { js, frame } = req.body || {};

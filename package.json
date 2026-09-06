@@ -1,6 +1,6 @@
 {
   "name": "chrome-agent-bridge",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "HTTP gateway that lets AI agents control a real logged-in Chrome browser on a Windows / macOS / Linux laptop over a private network.",
   "main": "gateway/index.js",
   "scripts": {
