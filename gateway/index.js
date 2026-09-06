@@ -1,12 +1,132 @@
 const express = require('express');
 const { chromium } = require('playwright');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
+const upload = require('./lib/upload');
+const { readToken, makeTokenGuard } = require('./lib/auth');
+
+const execFileAsync = promisify(execFile);
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+// Optional bearer token (BRIDGE_TOKEN). Off by default; see lib/auth.js.
+app.use(makeTokenGuard(readToken()));
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '3007', 10);
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9222';
+
+// --- Chrome watchdog -------------------------------------------------------
+// When the launcher starts the gateway it passes the knobs needed to bring
+// Chrome back up. If Chrome dies, or -- the motivating case -- a background
+// binary update makes Chrome relaunch WITHOUT --remote-debugging-port, the CDP
+// endpoint vanishes and connectOverCDP fails forever even though "Chrome is
+// running". The watchdog kills any Chrome still holding our DEDICATED profile
+// (a fresh launch can't reopen the debug port while the profile's SingletonLock
+// is held by a flag-less instance) and relaunches it with the right flags, so
+// the bridge self-heals on the next request.
+//
+// It is OFF unless BOTH CAB_CHROME_BIN and CAB_PROFILE_DIR are provided -- so
+// running `node index.js` by hand never spawns or kills anything, and the
+// kill is always scoped to the exact dedicated profile path, never a blanket
+// "kill all Chrome" (your personal browser uses a different profile).
+const WATCHDOG_CHROME_BIN = process.env.CAB_CHROME_BIN || '';
+const WATCHDOG_PROFILE_DIR = process.env.CAB_PROFILE_DIR || '';
+const WATCHDOG_EXTRA_ARGS = (process.env.CAB_CHROME_EXTRA_ARGS || '').split(' ').filter(Boolean);
+const WATCHDOG_ENABLED = !!(WATCHDOG_CHROME_BIN && WATCHDOG_PROFILE_DIR);
+const RELAUNCH_COOLDOWN_MS = parseInt(process.env.CAB_WATCHDOG_COOLDOWN_MS || '20000', 10);
+let lastRelaunchAt = 0;
+let relaunchInFlight = false;
+
+function logLine(msg) {
+  console.log(`${new Date().toISOString()} ${msg}`);
+}
+
+// Kill every chrome process whose command line references our dedicated
+// profile directory -- and nothing else. Best-effort: if nothing matches (or
+// the query tool is unavailable) we simply move on and relaunch.
+async function killChromeOnProfile() {
+  const needle = WATCHDOG_PROFILE_DIR;
+  try {
+    if (process.platform === 'win32') {
+      const psLiteral = "'" + needle.replace(/'/g, "''") + "'";
+      const ps =
+        `$p=${psLiteral}; ` +
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like "*$p*" } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { timeout: 10000 });
+    } else {
+      // pkill -f matches against the whole argv; the profile path is unique.
+      await execFileAsync('pkill', ['-f', `--user-data-dir=${needle}`], { timeout: 10000 }).catch(() => {});
+    }
+  } catch (_) { /* nothing matched, or tool unavailable -- ignore */ }
+}
+
+function spawnChrome(port, address) {
+  const args = [
+    `--remote-debugging-port=${port}`,
+    `--remote-debugging-address=${address}`,
+    '--disable-component-update',
+    `--user-data-dir=${WATCHDOG_PROFILE_DIR}`,
+    ...WATCHDOG_EXTRA_ARGS,
+  ];
+  const child = spawn(WATCHDOG_CHROME_BIN, args, { detached: true, stdio: 'ignore' });
+  child.on('error', (e) => console.error(`${new Date().toISOString()} [watchdog] Chrome spawn failed: ${e.message}`));
+  child.unref();
+}
+
+async function waitForCdp(port, address, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  const url = `http://${address}:${port}/json/version`;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return true;
+    } catch (_) { /* endpoint not up yet */ }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return false;
+}
+
+// Bring Chrome back with the right flags. Returns true if CDP is reachable
+// afterwards. Guarded by a cooldown + in-flight flag so concurrent requests
+// (e.g. the agent's /health poll) never trigger a relaunch storm.
+async function tryRelaunchChrome() {
+  if (!WATCHDOG_ENABLED || relaunchInFlight) return false;
+  const now = Date.now();
+  if (now - lastRelaunchAt < RELAUNCH_COOLDOWN_MS) return false;
+  relaunchInFlight = true;
+  lastRelaunchAt = now;
+  try {
+    const u = new URL(CDP_URL);
+    const port = u.port || '9222';
+    const address = u.hostname || '127.0.0.1';
+    logLine(`[watchdog] CDP ${CDP_URL} unreachable; restarting Chrome on profile ${WATCHDOG_PROFILE_DIR}`);
+    bridgePage = null;
+    await killChromeOnProfile();
+    await new Promise((r) => setTimeout(r, 500)); // let the profile lock release
+    spawnChrome(port, address);
+    const ok = await waitForCdp(port, address, 20000);
+    logLine(`[watchdog] Chrome ${ok ? 'is back on CDP' : 'did NOT come back in time'}`);
+    return ok;
+  } catch (e) {
+    console.error(`${new Date().toISOString()} [watchdog] error: ${e.message}`);
+    return false;
+  } finally {
+    relaunchInFlight = false;
+  }
+}
+
+function cdpConnectError(err) {
+  return new Error(
+    `Cannot connect to Chrome at ${CDP_URL}. ` +
+    `Make sure Chrome is running with --remote-debugging-port=9222 ` +
+    `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
+  );
+}
 
 // Request logging middleware. Without this, an agent that reports
 // "/goto timed out" gives us nothing to correlate against -- we don't know
@@ -67,24 +187,35 @@ let bridgePage = null;
 // browser.close(), so the real Chrome session is never killed.
 let cdpBrowser = null;
 
+// Connect to Chrome over CDP. If the first attempt fails, ask the watchdog to
+// bring Chrome back (a no-op when the watchdog is disabled) and try once more.
+async function connectWithWatchdog() {
+  try {
+    return await chromium.connectOverCDP(CDP_URL);
+  } catch (err) {
+    if (await tryRelaunchChrome()) {
+      try {
+        return await chromium.connectOverCDP(CDP_URL);
+      } catch (err2) {
+        throw cdpConnectError(err2);
+      }
+    }
+    throw cdpConnectError(err);
+  }
+}
+
 async function getContext() {
   if (!cdpBrowser || !cdpBrowser.isConnected()) {
-    try {
-      cdpBrowser = await chromium.connectOverCDP(CDP_URL);
-    } catch (err) {
-      cdpBrowser = null;
-      throw new Error(
-        `Cannot connect to Chrome at ${CDP_URL}. ` +
-        `Make sure Chrome is running with --remote-debugging-port=9222 ` +
-        `--remote-debugging-address=127.0.0.1. Original error: ${err.message}`
-      );
-    }
+    cdpBrowser = null;
+    const browser = await connectWithWatchdog();
     // If Chrome quits or the connection drops, discard the cached handle (and
-    // the now-stale bridge page) so the next request transparently reconnects.
-    cdpBrowser.on('disconnected', () => {
+    // the now-stale bridge page) so the next request transparently reconnects
+    // (and, with the watchdog, can relaunch Chrome).
+    browser.on('disconnected', () => {
       cdpBrowser = null;
       bridgePage = null;
     });
+    cdpBrowser = browser;
   }
   const context = cdpBrowser.contexts()[0];
   if (!context) {
@@ -96,6 +227,17 @@ async function getContext() {
 async function getBridgePage() {
   if (bridgePage && !bridgePage.isClosed()) return bridgePage;
   return null;
+}
+
+// Resolve which frame a command targets. `frame` is a URL substring; when it
+// matches a child iframe we return that frame, otherwise (or when omitted) we
+// fall back to the main frame. This is the exact resolution /eval has always
+// used, factored out so the frame-aware typing primitives can reach fields
+// nested in iframes (SAP opens its editors inside process-builder ->
+// design-studio iframes) the same way the existing helpers do.
+function resolveFrame(page, frame) {
+  if (!frame) return page.mainFrame();
+  return page.frames().find((f) => f.url().includes(frame)) || page.mainFrame();
 }
 
 async function newBridgePage(url) {
@@ -208,16 +350,169 @@ app.post('/click', async (req, res) => {
   }
 });
 
+// Type text into a field -- frame-aware and, by default, with TRUSTED
+// keystrokes. The original /type did page.fill(selector) on the top frame
+// only, which breaks two ways: (1) the field may live in a nested iframe (a
+// Monaco / UI5 editor inside SAP's process-builder -> design-studio frames),
+// which a top-frame selector can't reach; (2) fill() sets .value and fires a
+// single input event, which rich editors ignore because they listen for real
+// keydown/keypress events. This version resolves the frame, focuses the
+// element, optionally clears it, then replays the text. Params:
+//   selector (required)            CSS/text selector, resolved inside `frame`
+//   text                           text to enter (default "")
+//   frame   (string)               URL substring selecting a child frame (default main)
+//   mode    ("sequential"|"fill")  trusted keystrokes (default) vs fast value set
+//   clear   (bool)                 select-all + Delete before typing (default true)
+// Backward compatible: { selector, text } alone clears the field and ends with
+// exactly `text` in it -- the same observable result as the old page.fill --
+// now also returning the element's resulting value so callers can verify.
 app.post('/type', async (req, res) => {
   try {
-    const { selector, text } = req.body || {};
+    const { selector, text, frame, mode, clear } = req.body || {};
     if (!selector) return res.status(400).json({ error: 'Missing selector' });
 
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
-    await page.fill(selector, text || '');
+
+    const f = resolveFrame(page, frame);
+    const loc = f.locator(selector).first();
+    const value = text || '';
+
+    await loc.click();
+    if (clear !== false) {
+      await loc.press('Control+a');
+      await loc.press('Delete');
+    }
+    if (mode === 'fill') {
+      await loc.fill(value);
+    } else {
+      // pressSequentially sends real per-key events (delay lets UI5/Monaco
+      // keep up) -- the trusted-keystroke path editors actually accept.
+      await loc.pressSequentially(value, { delay: 10 });
+    }
+
+    // Read back what actually landed, without a second round-trip. Plain
+    // inputs/textareas expose .value; contenteditable / rich widgets expose
+    // their text via innerText.
+    let result = '';
+    try {
+      result = await loc.evaluate((el) => (el.value != null ? el.value : el.innerText));
+    } catch (_) { /* element detached after typing -- leave blank */ }
+
+    res.json({ success: true, value: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Type a whole string as TRUSTED keystrokes into whatever element currently
+// has focus -- no selector. Pairs with a focusing click (/click,
+// /click-by-text, or a /type that left the caret in place): focus once, then
+// send the entire string in a single call instead of one /press per character
+// (which turned a 30-char expression into ~60 round-trips). page.keyboard.type
+// dispatches real keydown/keypress/input events, so editors that ignore
+// programmatic value sets (Monaco, UI5, contenteditable) accept it. Params:
+//   text                   string to type (default "")
+//   pressEnterAfter (bool) press Enter when done (submit / accept a suggestion)
+app.post('/type-text', async (req, res) => {
+  try {
+    const { text, pressEnterAfter } = req.body || {};
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    await page.keyboard.type(text || '', { delay: 10 });
+    if (pressEnterAfter === true) await page.keyboard.press('Enter');
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fill a Monaco code editor (VS Code's editor, embedded by SAP Build and many
+// low-code tools) in ONE call. The editor's text lives in a Monaco "model",
+// not a normal <textarea>, so /type can't address it by selector. Two
+// strategies, selectable via `mode`:
+//   mode "api" (default): inside the frame, grab the Monaco editor instance
+//     (window.monaco.editor.getEditors()[0], else the first registered model
+//     behind a .monaco-editor node) and setValue(text). Fast and exact.
+//   mode "keystroke": click a .view-line to focus, Ctrl+A, Delete, then type
+//     the text as trusted keystrokes -- needed when the app only reacts to
+//     real key events (e.g. to drive its completion / token machinery).
+// Params:
+//   text                        text to put in the editor (default "")
+//   frame   (string)            URL substring selecting the editor's frame (default main)
+//   replace (bool)              replace the whole document (default true); false appends
+//   mode    ("api"|"keystroke") default "api"
+// Returns the editor's resulting value read back FROM THE MONACO MODEL, so the
+// caller verifies exactly what landed rather than trusting what we sent.
+app.post('/fill-monaco', async (req, res) => {
+  try {
+    const { text, frame, replace, mode } = req.body || {};
+
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    const f = resolveFrame(page, frame);
+    const value = text || '';
+    const doReplace = replace !== false;
+
+    if (mode === 'keystroke') {
+      const line = f.locator('.monaco-editor .view-line').first();
+      if ((await line.count()) === 0) {
+        return res.status(404).json({ error: 'No Monaco editor (.monaco-editor .view-line) found in this frame' });
+      }
+      await line.click();
+      if (doReplace) {
+        await page.keyboard.press('Control+a');
+        await page.keyboard.press('Delete');
+      } else {
+        await page.keyboard.press('Control+End');
+      }
+      await page.keyboard.type(value, { delay: 10 });
+    } else {
+      // API fast path: set the model value directly.
+      const setRes = await f.evaluate((args) => {
+        const ed = window.monaco && window.monaco.editor;
+        let model = null;
+        const eds = ed && ed.getEditors ? ed.getEditors() : [];
+        if (eds && eds.length) {
+          model = eds[0].getModel();
+        } else if (ed && ed.getModels) {
+          // Fallback: the model registered for the first .monaco-editor node.
+          const node = document.querySelector('.monaco-editor');
+          const models = ed.getModels();
+          if (node && models && models.length) model = models[0];
+        }
+        if (!model) return { ok: false, error: 'No Monaco editor/model found in this frame' };
+        if (args.replace) {
+          model.setValue(args.text);
+        } else {
+          const lastLine = model.getLineCount();
+          const lastCol = model.getLineMaxColumn(lastLine);
+          model.applyEdits([{
+            range: { startLineNumber: lastLine, startColumn: lastCol, endLineNumber: lastLine, endColumn: lastCol },
+            text: args.text,
+          }]);
+        }
+        return { ok: true };
+      }, { text: value, replace: doReplace });
+
+      if (!setRes.ok) return res.status(404).json({ error: setRes.error });
+    }
+
+    // Read the resulting value straight from the model so the caller sees
+    // exactly what the editor holds.
+    const result = await f.evaluate(() => {
+      const ed = window.monaco && window.monaco.editor;
+      const eds = ed && ed.getEditors ? ed.getEditors() : [];
+      if (eds && eds.length) return eds[0].getModel().getValue();
+      const models = ed && ed.getModels ? ed.getModels() : [];
+      return models && models.length ? models[0].getValue() : null;
+    });
+
+    res.json({ success: true, value: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -462,6 +757,96 @@ app.post('/click-by-text', async (req, res) => {
 //   { "js": "(() => Array.from(document.querySelectorAll('a.project-title')).map(a=>a.textContent))" }
 // Optional `frame` is a URL substring selecting which frame to run in (default
 // main frame). Localhost-only bridge, so arbitrary eval is acceptable here.
+// --- File upload (POST /upload-file) --------------------------------------
+// Fetch a file from a URL and hand it to a file input on the bridge page, so
+// a remote agent can upload media without a shared filesystem. Three ways to
+// name the input: `label` (accessible label), `selector` (CSS), or `click`
+// (open the site's file chooser by clicking a control: {selector} or
+// {role, name}). The temp copy stays on disk for an hour, because the page
+// reads it when the form submits, not when the input is set; older copies
+// are swept on every call.
+app.post('/upload-file', async (req, res) => {
+  const parsed = upload.parseUploadRequest(req.body);
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const t = parsed.target;
+  try {
+    const page = await getBridgePage();
+    if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    upload.cleanOldTemp();
+    fs.mkdirSync(upload.tempDir(), { recursive: true });
+    const tmp = upload.tempPathFor(t.url, t.filename);
+
+    let response;
+    try {
+      response = await fetch(t.url, { signal: AbortSignal.timeout(180000), redirect: 'follow' });
+    } catch (err) {
+      return res.status(502).json({ error: `Could not fetch ${t.url}: ${err.message}` });
+    }
+    if (!response.ok) {
+      return res.status(502).json({ error: `Could not fetch ${t.url}: HTTP ${response.status}` });
+    }
+    const limit = upload.maxBytes();
+    const declared = parseInt(response.headers.get('content-length') || '0', 10);
+    if (declared > limit) {
+      return res.status(413).json({ error: `File is ${declared} bytes, over the ${limit} byte limit` });
+    }
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length > limit) {
+      return res.status(413).json({ error: `File is ${buf.length} bytes, over the ${limit} byte limit` });
+    }
+    fs.writeFileSync(tmp, buf);
+    const file = path.basename(tmp);
+
+    // Way 1: the site opens its own chooser when a control is clicked.
+    if (t.click) {
+      const chooserPromise = page.waitForEvent('filechooser', { timeout: 15000 });
+      let clicked = false;
+      for (const f of page.frames()) {
+        const loc = t.click.selector
+          ? f.locator(t.click.selector)
+          : f.getByRole(t.click.role, t.click.name ? { name: t.click.name, exact: t.exact } : {});
+        if ((await loc.count()) > 0) {
+          await loc.first().click();
+          clicked = true;
+          break;
+        }
+      }
+      if (!clicked) {
+        chooserPromise.catch(() => {});
+        return res.status(404).json({ error: 'No control found to click for the file chooser' });
+      }
+      const chooser = await chooserPromise;
+      await chooser.setFiles(tmp);
+      return res.json({ success: true, bytes: buf.length, file, via: 'filechooser' });
+    }
+
+    // Way 2 and 3: a file input named by selector or by label. A hidden file
+    // input has no accessible label; when a frame holds exactly one, that is
+    // the one meant.
+    for (const f of page.frames()) {
+      let loc = null;
+      if (t.selector) {
+        loc = f.locator(t.selector);
+      } else {
+        loc = f.getByLabel(t.label, { exact: t.exact });
+        if ((await loc.count()) === 0) {
+          const inputs = f.locator('input[type=file]');
+          if ((await inputs.count()) === 1) loc = inputs;
+        }
+      }
+      if (loc && (await loc.count()) > 0) {
+        await loc.first().setInputFiles(tmp);
+        return res.json({ success: true, bytes: buf.length, file, via: t.selector ? 'selector' : 'label' });
+      }
+    }
+    const wanted = t.selector ? `selector "${t.selector}"` : `label "${t.label}"`;
+    return res.status(404).json({ error: `No file input found for ${wanted}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/eval', async (req, res) => {
   try {
     const { js, frame } = req.body || {};
@@ -470,8 +855,7 @@ app.post('/eval', async (req, res) => {
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
 
-    let f = page.mainFrame();
-    if (frame) f = page.frames().find((x) => x.url().includes(frame)) || f;
+    const f = resolveFrame(page, frame);
     const result = await f.evaluate(js);
     res.json({ result });
   } catch (err) {

@@ -35,7 +35,13 @@ This is **NOT** a normal browser and is **NOT** a CDP endpoint.
 - `GET  /content`     returns full page HTML
 - `GET  /screenshot`  returns PNG bytes
 - `POST /click`       body: `{ "selector": "<css>" }`
-- `POST /type`        body: `{ "selector": "<css>", "text": "<text>" }`
+- `POST /type`        body: `{ "selector": "<css>", "text": "<text>", "frame"?, "mode"?, "clear"? }`
+  (frame-aware; trusted keystrokes by default. `frame` = URL substring to reach a
+  field inside a nested iframe. Returns the resulting `value`.)
+- `POST /type-text`   body: `{ "text": "<text>", "pressEnterAfter"?: true }`
+  (types into the currently FOCUSED element — pair with a focusing `/click`)
+- `POST /fill-monaco` body: `{ "text": "<text>", "frame"?, "replace"?, "mode"? }`
+  (fills a Monaco code editor in one call; returns the editor's model value)
 - `POST /press`       body: `{ "key": "<key>" }`  (e.g. `Enter`, `Escape`, `Tab`)
 
 ---

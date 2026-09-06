@@ -82,6 +82,15 @@ export HOST="$GATEWAY_HOST"
 export PORT="$GATEWAY_PORT"
 export CDP_URL="http://$CDP_ADDRESS:$CDP_PORT"
 
+# Hand the gateway what it needs to RELAUNCH Chrome if the CDP endpoint ever
+# disappears (e.g. Chrome relaunched without the debug port after a background
+# update). With these set, the gateway's watchdog kills any Chrome still holding
+# THIS profile and restarts it with the right flags. Scoped to the dedicated
+# profile only -- your personal Chrome (different profile) is never touched.
+# Unset them to disable the watchdog.
+export CAB_CHROME_BIN="$CHROME_BIN"
+export CAB_PROFILE_DIR="$USER_DATA_DIR"
+
 mkdir -p "$USER_DATA_DIR"
 
 # --- Start Chrome -----------------------------------------------------------
@@ -90,17 +99,40 @@ printf 'Profile: %s\n' "$USER_DATA_DIR"
 printf 'Binary:  %s\n' "$CHROME_BIN"
 
 # Detach Chrome so the script can move on. setsid (Linux) or `&` + disown (macOS).
+# --disable-component-update stops Chrome from swapping out components
+# (Widevine, CRLSet, Origin Trials, ...) mid-session, which can briefly disrupt
+# the page the agent is driving. NOTE: it does NOT stop Chrome from upgrading
+# its own browser binary -- that is done by the OS-level updater (Keystone on
+# macOS, the package manager on Linux), which ignores Chrome's command line.
+#
+# On an unattended Linux autologin, no keyring password is available. Chrome can
+# wait forever for the keyring instead of opening its CDP endpoint, so use its
+# basic local password store there. Dedicated bridge profiles and their host must
+# therefore be protected like any other unencrypted browser session.
+CHROME_SESSION_FLAGS=()
+if [ "$(uname -s)" = "Linux" ]; then
+  CHROME_SESSION_FLAGS+=(--password-store=basic)
+fi
+
 if command -v setsid >/dev/null 2>&1; then
   setsid -f "$CHROME_BIN" \
     --remote-debugging-port="$CDP_PORT" \
     --remote-debugging-address="$CDP_ADDRESS" \
+    --disable-component-update \
+    --no-first-run \
+    "${CHROME_SESSION_FLAGS[@]}" \
     --user-data-dir="$USER_DATA_DIR" \
+    about:blank \
     >/dev/null 2>&1 || true
 else
   "$CHROME_BIN" \
     --remote-debugging-port="$CDP_PORT" \
     --remote-debugging-address="$CDP_ADDRESS" \
+    --disable-component-update \
+    --no-first-run \
+    "${CHROME_SESSION_FLAGS[@]}" \
     --user-data-dir="$USER_DATA_DIR" \
+    about:blank \
     >/dev/null 2>&1 &
   disown 2>/dev/null || true
 fi

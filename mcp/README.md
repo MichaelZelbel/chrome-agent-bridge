@@ -27,7 +27,9 @@ logged-in Chrome.
 | `pc_browser_read()`               | `GET /content`        | Return the current page's HTML (truncated if large) |
 | `pc_browser_screenshot()`         | `GET /screenshot`     | Screenshot the page (returned as an image) |
 | `pc_browser_click(selector)`      | `POST /click`         | Click an element by CSS selector |
-| `pc_browser_type(selector, text)` | `POST /type`          | Fill text into an element |
+| `pc_browser_type(selector, text, frame?, mode?, clear?)` | `POST /type` | Type into an element — frame-aware, trusted keystrokes by default; returns the resulting value |
+| `pc_browser_type_text(text, pressEnterAfter?)` | `POST /type-text` | Type a whole string as trusted keystrokes into the focused element (no selector) |
+| `pc_browser_fill_monaco(text, frame?, replace?, mode?)` | `POST /fill-monaco` | Fill a Monaco code editor in one call (API `setValue` or keystroke), reads back the model value |
 | `pc_browser_press(key)`           | `POST /press`         | Press a keyboard key (e.g. `Enter`) |
 | `pc_browser_health()`             | `GET /health`         | Check the bridge is reachable |
 | `pc_browser_tabs()`               | `GET /tabs`           | List open tabs (index, url, title, active) |
