@@ -49,6 +49,13 @@ surface that listens on the private network.
   dedicated profile, then starts the gateway.
 - An agent prompt that teaches an LLM when and how to use the bridge.
 
+## Planino: let your AI post through this bridge
+
+The `poster/` folder is an optional add-on for [Planino](https://planino.studio) users: a tiny
+waker that starts your AI (Claude Code or Hermes) only when a post is due on a platform with no
+API (Substack, Snapchat), and playbooks the AI follows to post through this bridge. See
+[`poster/README.md`](poster/README.md).
+
 ## When to use it
 
 - Your agent needs to read or interact with a site that requires login.
@@ -80,6 +87,9 @@ you on every site you've signed into in that profile.
 - ❌ Do not store secrets, cookies, or tokens in the repository.
 - ✅ Use a **dedicated** Chrome profile, not your daily personal browser.
 - ✅ Review what your agent is allowed to do before giving it access.
+- ✅ Optional since v0.4.0: start the gateway with `BRIDGE_TOKEN=<secret>` and every request
+  but `/health` must carry `Authorization: Bearer <secret>`. The private network stays the real
+  boundary; the token is for a bridge that others on the network could reach.
 
 See [`docs/security.md`](docs/security.md) for the full threat model.
 

@@ -67,3 +67,18 @@ the same care as the browser sessions it controls.
 - No multi-user separation.
 
 Add what your environment requires.
+
+## Bearer token (optional, v0.4.0)
+
+Start the gateway with `BRIDGE_TOKEN=<secret>` and every route but `/health` requires
+`Authorization: Bearer <secret>`; the MCP proxy sends it when the same variable is set on its
+side. Off by default, so an existing install changes nothing. It does not replace the private
+network: a token on an internet-exposed port is still an internet-exposed browser.
+
+## /upload-file
+
+`POST /upload-file {url, label | selector | click, filename?}` downloads the URL on the bridge
+machine and hands the file to a file input on the current page. The temp copy lives under the
+system temp directory for an hour (the page reads it when the form submits) and is then swept.
+Size cap: `CAB_UPLOAD_MAX_BYTES` (default 1.5 GB). The URL is fetched by the bridge machine, so
+only URLs that machine may reach can be uploaded.
