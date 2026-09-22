@@ -1,19 +1,20 @@
 # Snapchat Spotlight
 
-Status: **skeleton, UNVERIFIED.** Written 2026-09-07 from Snapchat's support pages before the
-first supervised run: the web uploader at profile.snapchat.com takes videos only, to Spotlight
-and to My Story, for a Public Profile. Every control name below is a guess to be replaced by
-what the snapshot shows; the first AI to post through it rewrites this file.
+Status: **upload page verified 2026-09-22, no post made yet.** Sections 1, 3 and 4 name what the
+signed-in page actually showed in profile E on 2026-09-22. Sections 2, 5 and 6 are still guesses
+from the support pages; the first AI to post through it rewrites them.
 
 Payload fields used: `media_url` (a vertical video, required), `post_text` (the caption).
 `headline`, `first_comment`, `hashtags` and the email fields are not carried here.
 
 ## 1. Open
 
-`https://profile.snapchat.com/` (Snapchat's Profile Manager). Signed in: the snapshot shows the
-public profile's name and a `button "Upload"` or a drop area named "Choose video". Not signed in:
-a sign-in form with `textbox "Username"`. Report `needs_manual` with "profile E is not signed in
-to Snapchat" in that case; do not try to sign in.
+`https://my.snapchat.com/`. It forwards to `profile.snapchat.com/snap-posting-web` and then to
+the profile's "Post to Snapchat" page. The bare `https://profile.snapchat.com/` front page only
+offers the ads and business sign-up, so do not start there. Signed in: the snapshot shows
+`button "Post to Snapchat New"` in the side bar and a `button "Drag & Drop or Upload File ..."`.
+Not signed in: `heading "Log in to Snapchat"` with `textbox "Username or Email"`. Report
+`needs_manual` with "profile E is not signed in to Snapchat" in that case; do not try to sign in.
 
 ## 2. Already posted?
 
@@ -26,15 +27,20 @@ only after review; an upload with this caption is already in the list", stop.
 ## 3. Media
 
 `pc_browser_upload_file` with `media_url`, `filename` keeping `.mp4`, and
-`click: {role: "button", name: "Choose video"}` (the site opens its own file chooser). If the
-snapshot shows a plain `input[type=file]` instead, use `selector: "input[type=file]"`.
+`selector: "input[type=file]"`. The page has exactly one, accepting
+`video/mp4,video/quicktime,video/webm,image/jpeg,image/png` (read 2026-09-22). The page allows
+photo or video, 5 seconds to 5 minutes, at least 540x960.
 
 ## 4. Controls
 
-- `textbox "Caption"` or "Add a description": `post_text`.
-- Under "Send to", tick `checkbox "Spotlight Snaps"`. Leave "My Story" alone unless the playbook
-  is told otherwise.
-- The "allow others to remix" and "show on Public Profile" options: leave the defaults.
+Before a file is chosen the page shows three checkboxes and a disabled `button "Post"` and
+`button "Schedule for Later"` (2026-09-22). The caption field appears only after upload; name it
+here on the first run.
+
+- Tick `checkbox "Post to Spotlight Reach millions of Snapchatters."`.
+- Leave `checkbox "Post to Public Story ..."` and `checkbox "Save to a Public Profile Showcase
+  your Snaps."` unticked unless the job says otherwise.
+- The caption (appears after upload): `post_text`.
 
 ## 5. Dialogues
 
