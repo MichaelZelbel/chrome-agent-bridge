@@ -25,7 +25,7 @@ Planino ──(every 2 min: "anything queued?")──▶ waker ──▶ your AI
 3. Copy `poster.env.example` to `poster.env` and set `PLANINO_POSTER_TOKEN`, `BRIDGE_URL`
    (the posting profile's port) and `RUNNER`.
 4. Install your AI and the skill:
-   - **Claude Code**: `RUNNER=./runners/claude.sh`, `HUB_DIR=<a clone of the hub>` holding
+   - **Claude Code**: `RUNNER=./runners/claude.sh`, `GODSPEED_DIR=<a clone of the godspeed>` holding
      `.claude/skills/browser-post/` and a `.mcp.json` with the Planino and chrome-bridge MCP
      servers. The runner writes Claude's own cost onto the job afterwards.
    - **Hermes**: `RUNNER=./runners/hermes.sh`, `HERMES_PROFILE=<profile>` whose skills

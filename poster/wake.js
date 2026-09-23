@@ -70,7 +70,7 @@ function loadConfig(env = process.env, file = path.join(HERE, 'poster.env')) {
     extraEnv: {},
   };
   // Everything else in the file is handed to the runner, so a runner's own
-  // knobs (HUB_DIR, HERMES_PROFILE, CLAUDE_BIN) live in the same one place.
+  // knobs (GODSPEED_DIR, HERMES_PROFILE, CLAUDE_BIN) live in the same one place.
   for (const [k, v] of Object.entries(fileVars)) {
     if (!(k in env)) cfg.extraEnv[k] = v;
   }

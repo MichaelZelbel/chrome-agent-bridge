@@ -30,7 +30,7 @@ function fakePlanino(state) {
       }
       if (action === 'checkin') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: true, poster: { name: 'the hub' } }));
+        return res.end(JSON.stringify({ ok: true, poster: { name: 'Mission Control' } }));
       }
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'nope' }));
@@ -63,11 +63,11 @@ function cfgFor(url, extra = {}) {
 test('readEnvFile and loadConfig read poster.env and let the environment win', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'waker-cfg-'));
   const file = path.join(dir, 'poster.env');
-  fs.writeFileSync(file, `# comment\nPLANINO_POSTER_TOKEN="${TOKEN}"\nPOLL_SEC=45\nHUB_DIR=/srv/hub\n`);
+  fs.writeFileSync(file, `# comment\nPLANINO_POSTER_TOKEN="${TOKEN}"\nPOLL_SEC=45\nGODSPEED_DIR=/srv/godspeed\n`);
   const cfg = waker.loadConfig({ POLL_SEC: '60' }, file);
   assert.equal(cfg.token, TOKEN);
   assert.equal(cfg.pollSec, 60);
-  assert.equal(cfg.extraEnv.HUB_DIR, '/srv/hub');
+  assert.equal(cfg.extraEnv.GODSPEED_DIR, '/srv/godspeed');
   assert.deepEqual(waker.validateConfig(cfg), []);
   const bad = waker.loadConfig({}, path.join(dir, 'missing.env'));
   assert.ok(waker.validateConfig(bad).some((p) => /PLANINO_POSTER_TOKEN/.test(p)));
@@ -128,7 +128,7 @@ test('checkin reports the harness and whether the bridge answers', async () => {
   const r = await waker.checkin(cfgFor(p.url));
   await p.close();
   assert.equal(r.bridgeOk, false);
-  assert.equal(r.poster.name, 'the hub');
+  assert.equal(r.poster.name, 'Mission Control');
   const c = p.calls.find((x) => x.action === 'checkin');
   assert.equal(c.body.harness, 'test');
   assert.equal(c.body.bridge_ok, false);

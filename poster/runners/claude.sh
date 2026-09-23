@@ -3,7 +3,7 @@
 #
 # Called by wake.js with the job id as $1 and these in the environment:
 #   JOB_ID, JOB_PLATFORM, PLANINO_POSTER_URL, PLANINO_POSTER_TOKEN, BRIDGE_URL
-# Knobs (poster.env): HUB_DIR (the hub clone that holds .claude/skills/browser-post
+# Knobs (poster.env): GODSPEED_DIR (Mission Control clone that holds .claude/skills/browser-post
 # and the Planino + chrome-bridge MCP servers in its .mcp.json), CLAUDE_BIN,
 # CLAUDE_MAX_TURNS.
 #
@@ -13,17 +13,17 @@
 set -uo pipefail
 
 JOB_ID="${1:-${JOB_ID:-}}"
-HUB_DIR="${HUB_DIR:-$HOME/hub}"
+GODSPEED_DIR="${GODSPEED_DIR:-$HOME/godspeed}"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 MAX_TURNS="${CLAUDE_MAX_TURNS:-60}"
 
-if [ ! -d "$HUB_DIR/.claude/skills/browser-post" ]; then
-  echo "runner: no browser-post skill under $HUB_DIR/.claude/skills; set HUB_DIR in poster.env" >&2
+if [ ! -d "$GODSPEED_DIR/.claude/skills/browser-post" ]; then
+  echo "runner: no browser-post skill under $GODSPEED_DIR/.claude/skills; set GODSPEED_DIR in poster.env" >&2
   exit 2
 fi
-cd "$HUB_DIR" || exit 2
+cd "$GODSPEED_DIR" || exit 2
 
-# The hub's secrets layer, so .mcp.json can reach Planino and the bridge.
+# Mission Control's secrets layer, so .mcp.json can reach Planino and the bridge.
 # shellcheck disable=SC1091
 [ -f scripts/secrets.sh ] && { set -a; . scripts/secrets.sh 2>/dev/null || true; set +a; }
 export BRIDGE_URL PLANINO_POSTER_URL PLANINO_POSTER_TOKEN
