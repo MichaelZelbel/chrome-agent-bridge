@@ -1,8 +1,10 @@
 # Substack
 
-Status: **skeleton, UNVERIFIED.** Written 2026-09-07 from Substack's public editor before the
-first supervised run. Every control name below is a guess to be replaced by what the snapshot
-actually shows; the first AI to post through it rewrites this file and dates the correction.
+Status: **partly verified 2026-09-28** (sign-in, dashboard, editor controls read from the live
+snapshot in profile E). The publish dialogues in section 4 are still unverified until the first
+supervised post; the first AI to post through it rewrites them and dates the correction.
+
+Publication: **`michaelzelbel.substack.com`** (account michael@zelbel.de).
 
 Payload fields used: `headline` (title), `email_preview` (subtitle), `post_text` (body),
 `thumbnail_url` or `media_url` (an image at the top, optional), `email_subject` (only when it
@@ -10,14 +12,11 @@ differs from the title; Substack uses the title as the subject by default).
 
 ## 1. Open
 
-`https://<publication>.substack.com/publish/post?type=newsletter` opens a new draft in the
-editor of the publication this profile owns. Signed in: the snapshot shows the editor with a
-`textbox "Title"` and the publication's name in the top bar. Not signed in: a page with
+`https://michaelzelbel.substack.com/publish/post?type=newsletter` opens a new draft in the
+editor. Signed in: the snapshot shows the editor with `textbox "title"` and
+`button "Michael Zelbel"` (the byline). Not signed in: a page with
 `button "Sign in"` and no editor. Report `needs_manual` with "profile E is not signed in to
 Substack" in that case; do not try to sign in.
-
-The publication's subdomain: read it from `https://substack.com/home` (the profile menu names
-the publication) the first time and write it here.
 
 ## 2. Already posted?
 
@@ -28,15 +27,24 @@ may hold a half-finished draft from a dead attempt; reuse it rather than making 
 
 ## 3. Controls
 
-- `textbox "Title"`: `headline`. Fill with `pc_browser_fill_by_label` label "Title".
-- `textbox "Add a subtitle…"` (placeholder text): `email_preview`. Fill by label with the
-  placeholder, `exact: false`.
-- The body is a rich text editor (role `textbox`, no label; ProseMirror). Click into it
-  (`pc_browser_click_by_role` role "textbox", the one after the subtitle) and use
-  `pc_browser_type` with `post_text`. Paragraph breaks: type Enter between paragraphs. Do not
-  paste Markdown symbols; Substack renders plain paragraphs and `**` would show as characters.
-- An image at the top (optional): the editor's toolbar `button "Image"` opens a file chooser;
-  `pc_browser_upload_file` with `click: {role: "button", name: "Image"}` and the picture URL.
+Opening the editor URL creates a draft at once: the address becomes
+`/publish/post/<id>`. Open it once per job, never twice.
+
+Substack's inputs are React-controlled: a value set by `fill-by-label` shows in the field but
+React does not see it (on the sign-in page it answered "Please enter a valid email"). Use real
+keystrokes: `pc_browser_type` (bridge `POST /type` with a CSS `selector`) or click, then
+`pc_browser_type_text`.
+
+- `textbox "title"` (placeholder "Title"): `headline`. The top of the page also carries a
+  file-settings panel with `textbox "Add a title..."` and `textbox "Add a description..."`;
+  those are the SEO title and description, not the post title. Use the one named "title".
+- `textbox "Add a subtitle…"`: `email_preview`.
+- `textbox "Start writing..."`: the body (ProseMirror). Click into it and type `post_text`,
+  Enter between paragraphs. Do not type Markdown symbols; `**` would show as characters.
+- An image (optional): toolbar `button "Insert image"`; `pc_browser_upload_file` with
+  `click: {role: "button", name: "Insert image"}` and the picture URL. The settings panel also
+  has a Thumbnail "Upload" (cropped to 3:2) for the social card.
+- Top bar: `button "Saved"` (autosave state), `button "Preview"`, `button "Continue"`.
 
 ## 4. Dialogues
 
@@ -58,4 +66,7 @@ None yet. Record tool calls and minutes of the first successful run here.
 
 ## 7. Corrections
 
-(none yet)
+- 2026-09-28: profile E signed in to Substack (email code to michael@zelbel.de, read from
+  Gmail). Publication subdomain filled in; editor control names replaced by the live snapshot;
+  the React-input note added. The Posts dashboard is `/publish/posts` (tabs Published,
+  Scheduled, Drafts). An empty test draft made while reading the editor was deleted.
