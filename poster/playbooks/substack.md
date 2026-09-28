@@ -1,8 +1,7 @@
 # Substack
 
-Status: **partly verified 2026-09-28** (sign-in, dashboard, editor controls read from the live
-snapshot in profile E). The publish dialogues in section 4 are still unverified until the first
-supervised post; the first AI to post through it rewrites them and dates the correction.
+Status: **verified 2026-09-28** end to end by the first real post (job 022018d1, "My AI Spent
+75 Days on SAP Customer Support") in profile E.
 
 Publication: **`michaelzelbel.substack.com`** (account michael@zelbel.de).
 
@@ -39,30 +38,49 @@ keystrokes: `pc_browser_type` (bridge `POST /type` with a CSS `selector`) or cli
   file-settings panel with `textbox "Add a title..."` and `textbox "Add a description..."`;
   those are the SEO title and description, not the post title. Use the one named "title".
 - `textbox "Add a subtitle…"`: `email_preview`.
-- `textbox "Start writing..."`: the body (ProseMirror). Click into it and type `post_text`,
-  Enter between paragraphs. Do not type Markdown symbols; `**` would show as characters.
-- An image (optional): toolbar `button "Insert image"`; `pc_browser_upload_file` with
-  `click: {role: "button", name: "Insert image"}` and the picture URL. The settings panel also
-  has a Thumbnail "Upload" (cropped to 3:2) for the social card.
+- `textbox "Start writing..."`: the body (ProseMirror). Click into it and type `post_text` in
+  ONE `pc_browser_type_text` call with a single `\n` between paragraphs (each `\n` is an Enter,
+  so the payload's blank lines must be collapsed or they become empty paragraphs). Do not type
+  Markdown symbols; `**` would show as characters. A long body (~3,000 characters) outlasts the
+  bridge's HTTP timeout: the call reports "Could not reach the Chrome Agent Bridge" while the
+  laptop keeps typing. Do not retype; wait, then count `.ProseMirror p` until it stops growing
+  and compare the text with the payload. Substack curls straight quotes; that is expected.
+- An image (optional): put the cursor at the top first (`pc_browser_press "Control+Home"`),
+  click toolbar `button "Insert image"`, which opens a MENU (Image, Gallery, Stock photos,
+  Generate image), then `pc_browser_upload_file` with `click: {role: "menuitem", name: "Image"}`
+  and the picture URL. A video `media_url` is not uploaded: the post body carries the YouTube
+  link, and `thumbnail_url` is the picture on top. The settings panel also has a Thumbnail
+  "Upload" (cropped to 3:2) for the social card; Substack fills the social card from the first
+  image on its own.
 - Top bar: `button "Saved"` (autosave state), `button "Preview"`, `button "Continue"`.
 
 ## 4. Dialogues
 
-1. `button "Continue"` (top right) opens the publish settings: audience (Everyone), send as
-   email (checked), post to web (checked).
-2. `button "Send to everyone now"` publishes and emails. A wrong click on `button "Schedule"`
-   would not publish at once: never use it, Planino owns the timing.
-3. The confirmation shows the live post; the address bar changes to
-   `https://<publication>.substack.com/p/<slug>`.
+1. `button "Continue"` (top right) opens `dialog "Publish"`: audience `radio "Everyone"`
+   (checked), comments Everyone, `checkbox "Send via email and the Substack app"` (checked),
+   `checkbox "Schedule time to email and publish"` (unchecked: leave it, Planino owns the
+   timing), Scan for AI text (ignore), `button "Cancel"`, `button "Send to everyone now"`.
+2. `button "Send to everyone now"` publishes and emails. The button turns into
+   `button "Loading Publishing..."` for a few seconds.
+3. The page then goes to `/publish/posts/detail/<id>/share-center`, NOT to the post. It holds
+   one link `https://<publication>.substack.com/p/<slug>`: that is the live URL.
 
 ## 5. Read the URL back
 
-The address bar after step 4.3, or `button "Share"` on the confirmation, or the Published list in
-step 2. Report that URL.
+The `a[href*="/p/"]` link on the share center after step 4.3 (`pc_browser_eval`), or the
+Published list in step 2. Open it and check the title, the date and the last paragraph before
+reporting that URL.
 
 ## 6. Cost baseline
 
-None yet. Record tool calls and minutes of the first successful run here.
+2026-09-28, first run: about 30 tool calls and 5 minutes, Claude Opus in Claude Code.
+
+## Bridge notes
+
+`pc_browser_eval` returns `{}` for a bare array; wrap results in an object
+(`({links: [...]})`). The screenshot for the report is the bridge's `GET /screenshot` PNG;
+it is too big to pass inline, so send the report through the poster API
+(`$PLANINO_POSTER_URL/report`) with it base64-encoded.
 
 ## 7. Corrections
 
@@ -70,3 +88,6 @@ None yet. Record tool calls and minutes of the first successful run here.
   Gmail). Publication subdomain filled in; editor control names replaced by the live snapshot;
   the React-input note added. The Posts dashboard is `/publish/posts` (tabs Published,
   Scheduled, Drafts). An empty test draft made while reading the editor was deleted.
+- 2026-09-28, first real post: section 4 verified and rewritten (dialog controls, share-center
+  landing page). Insert image opens a menu, not a file chooser. Long body typing outlasts the
+  bridge timeout but finishes. Video media is not uploaded; the thumbnail goes on top.
