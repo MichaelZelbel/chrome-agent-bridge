@@ -6,8 +6,8 @@ Status: **verified 2026-09-28** end to end by the first real post (job 022018d1,
 Publication: **`michaelzelbel.substack.com`** (account michael@zelbel.de).
 
 Payload fields used: `headline` (title), `email_preview` (subtitle), `post_text` (body),
-`thumbnail_url` or `media_url` (an image at the top, optional), `email_subject` (only when it
-differs from the title; Substack uses the title as the subject by default).
+`email_subject` (only when it differs from the title; Substack uses the title as the subject by
+default). `media_url` and `thumbnail_url` are ignored on Substack (section 3).
 
 ## 1. Open
 
@@ -38,20 +38,28 @@ keystrokes: `pc_browser_type` (bridge `POST /type` with a CSS `selector`) or cli
   file-settings panel with `textbox "Add a title..."` and `textbox "Add a description..."`;
   those are the SEO title and description, not the post title. Use the one named "title".
 - `textbox "Add a subtitle…"`: `email_preview`.
-- `textbox "Start writing..."`: the body (ProseMirror). Click into it and type `post_text` in
-  ONE `pc_browser_type_text` call with a single `\n` between paragraphs (each `\n` is an Enter,
-  so the payload's blank lines must be collapsed or they become empty paragraphs). Do not type
-  Markdown symbols; `**` would show as characters. A long body (~3,000 characters) outlasts the
-  bridge's HTTP timeout: the call reports "Could not reach the Chrome Agent Bridge" while the
-  laptop keeps typing. Do not retype; wait, then count `.ProseMirror p` until it stops growing
-  and compare the text with the payload. Substack curls straight quotes; that is expected.
-- An image (optional): put the cursor at the top first (`pc_browser_press "Control+Home"`),
-  click toolbar `button "Insert image"`, which opens a MENU (Image, Gallery, Stock photos,
-  Generate image), then `pc_browser_upload_file` with `click: {role: "menuitem", name: "Image"}`
-  and the picture URL. A video `media_url` is not uploaded: the post body carries the YouTube
-  link, and `thumbnail_url` is the picture on top. The settings panel also has a Thumbnail
-  "Upload" (cropped to 3:2) for the social card; Substack fills the social card from the first
-  image on its own.
+- `textbox "Start writing..."`: the body (ProseMirror). **Paste it, never type it.** Typing
+  leaves a YouTube link as plain text, because Substack turns a link into an embedded player
+  only on paste; typing a long body also outlasts the bridge's HTTP timeout. One
+  `pc_browser_eval` dispatches a paste of the whole `post_text` into `.ProseMirror`:
+  `new Promise(res=>{const pm=document.querySelector('.ProseMirror');pm.focus();`
+  `const dt=new DataTransfer();dt.setData('text/plain',TEXT);`
+  `pm.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));`
+  `setTimeout(()=>res({children:Array.from(pm.children).map(e=>e.tagName+':'+e.className.slice(0,30)+':'+e.innerText.slice(0,60))}),5000)})`
+  with TEXT as a JSON string literal of `post_text` (blank lines between paragraphs are right
+  for a paste). Write no raw `
+` escape sequences into the eval source by hand: the bridge
+  then sees a broken string ("Invalid or unexpected token"); build the text with
+  `JSON.stringify` or `String.fromCharCode(10)`. Check the result: a YouTube link on its own
+  line must come back as `DIV:youtube-wrap`, the paragraphs as `P`. Verified 2026-09-28 on a
+  scratch draft (deleted). Do not type Markdown symbols; `**` would show as characters.
+  Substack curls straight quotes; that is expected.
+- **No image.** Do not upload `thumbnail_url` or `media_url` into a Substack post. Planino
+  freezes the project's video and thumbnail into every payload, but that is the project's
+  media, not a request for a picture in the post; Michael wants the post as its text, with the
+  YouTube link as the player (2026-09-28). The same goes for the settings panel's Thumbnail.
+  (For reference: `button "Insert image"` opens a menu, Image, Gallery, Stock photos, Generate
+  image, and `menuitem "Image"` is the file chooser.)
 - Top bar: `button "Saved"` (autosave state), `button "Preview"`, `button "Continue"`.
 
 ## 4. Dialogues
@@ -73,7 +81,8 @@ reporting that URL.
 
 ## 6. Cost baseline
 
-2026-09-28, first run: about 30 tool calls and 5 minutes, Claude Opus in Claude Code.
+2026-09-28, first run: 51 tool calls, 223 seconds, 1.04 USD, Claude Opus in Claude Code
+(typing the body; pasting should cut both).
 
 ## Bridge notes
 
@@ -91,3 +100,6 @@ it is too big to pass inline, so send the report through the poster API
 - 2026-09-28, first real post: section 4 verified and rewritten (dialog controls, share-center
   landing page). Insert image opens a menu, not a file chooser. Long body typing outlasts the
   bridge timeout but finishes. Video media is not uploaded; the thumbnail goes on top.
+- 2026-09-28, Michael after the first post: the picture on top was not asked for, and the
+  YouTube link stayed plain text instead of a player. The body is now pasted (verified to
+  embed the video) and no image is uploaded. The first post kept both faults.
