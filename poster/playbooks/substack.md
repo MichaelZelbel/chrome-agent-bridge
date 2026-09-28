@@ -1,9 +1,11 @@
 # Substack
 
 Status: **verified 2026-09-28** end to end by the first real post (job 022018d1, "My AI Spent
-75 Days on SAP Customer Support") in profile E.
+75 Days on SAP Customer Support") in a dedicated posting profile.
 
-Publication: **`michaelzelbel.substack.com`** (account michael@zelbel.de).
+Publication: `<publication>` below is `$SUBSTACK_PUBLICATION` from poster.env (`yourname` for
+`yourname.substack.com`). Not set: open `https://substack.com/home` once, follow the profile
+menu to the Dashboard, and read the subdomain from the address bar.
 
 Payload fields used: `headline` (title), `email_preview` (subtitle), `post_text` (body),
 `email_subject` (only when it differs from the title; Substack uses the title as the subject by
@@ -11,10 +13,10 @@ default), `media_url` and `thumbnail_url` exactly as given (section 3).
 
 ## 1. Open
 
-`https://michaelzelbel.substack.com/publish/post?type=newsletter` opens a new draft in the
+`https://<publication>.substack.com/publish/post?type=newsletter` opens a new draft in the
 editor. Signed in: the snapshot shows the editor with `textbox "title"` and
-`button "Michael Zelbel"` (the byline). Not signed in: a page with
-`button "Sign in"` and no editor. Report `needs_manual` with "profile E is not signed in to
+a button named after the writer (the byline). Not signed in: a page with
+`button "Sign in"` and no editor. Report `needs_manual` with "the posting profile is not signed in to
 Substack" in that case; do not try to sign in.
 
 ## 2. Already posted?
@@ -95,16 +97,16 @@ it is too big to pass inline, so send the report through the poster API
 
 ## 7. Corrections
 
-- 2026-09-28: profile E signed in to Substack (email code to michael@zelbel.de, read from
-  Gmail). Publication subdomain filled in; editor control names replaced by the live snapshot;
+- 2026-09-28: the posting profile signed in to Substack (Substack emails a code; entering
+  it on the sign-in page works). Publication subdomain filled in; editor control names replaced by the live snapshot;
   the React-input note added. The Posts dashboard is `/publish/posts` (tabs Published,
   Scheduled, Drafts). An empty test draft made while reading the editor was deleted.
 - 2026-09-28, first real post: section 4 verified and rewritten (dialog controls, share-center
   landing page). Insert image opens a menu, not a file chooser. Long body typing outlasts the
   bridge timeout but finishes. Video media is not uploaded; the thumbnail goes on top.
-- 2026-09-28, Michael after the first post: the picture on top was not asked for, and the
+- 2026-09-28, the person after the first post: the picture on top was not asked for, and the
   YouTube link stayed plain text instead of a player. The body is now pasted (verified to
   embed the video) and no image is uploaded. The first post kept both faults.
-- 2026-09-28, Michael: "stick to what I put into Planino". The line "no image on Substack" was
+- 2026-09-28, the person: "stick to what I put into Planino". The line "no image on Substack" was
   itself a taste decision and is gone. The rule is now the payload, exactly; Planino's side was
   fixed so the payload no longer carries a thumbnail the post's card hides.

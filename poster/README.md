@@ -24,13 +24,17 @@ Planino ──(every 2 min: "anything queued?")──▶ waker ──▶ your AI
 2. In Planino, Settings, **AI poster**: create a poster, tick its platforms, copy the token.
 3. Copy `poster.env.example` to `poster.env` and set `PLANINO_POSTER_TOKEN`, `BRIDGE_URL`
    (the posting profile's port) and `RUNNER`.
-4. Install your AI and the skill:
-   - **Claude Code**: `RUNNER=./runners/claude.sh`, `GODSPEED_DIR=<a clone of the godspeed>` holding
-     `.claude/skills/browser-post/` and a `.mcp.json` with the Planino and chrome-bridge MCP
-     servers. The runner writes Claude's own cost onto the job afterwards.
-   - **Hermes**: `RUNNER=./runners/hermes.sh`, `HERMES_PROFILE=<profile>` whose skills
-     directory includes `browser-post`. Hermes one-shot runs load no MCP servers, so the skill's
-     REST path (curl against the poster API and the bridge) is what this runner relies on.
+4. Pick your AI. The posting rules it follows ship in this folder (`skill/SKILL.md`, next to
+   `playbooks/`), so nothing else needs installing besides the AI itself:
+   - **Claude Code**: `RUNNER=./runners/claude.sh`, and `npm install` once in `../mcp` (the
+     bridge's MCP server, which gives Claude the browser tools). Planino is reached with the
+     poster token alone. The runner writes Claude's own cost onto the job afterwards. Set
+     `AI_WORKDIR` only if you want Claude to run inside a project of your own, with that
+     project's instructions, hooks and MCP servers.
+   - **Hermes**: `RUNNER=./runners/hermes.sh`, `HERMES_PROFILE=<profile>`. Hermes one-shot runs
+     load no MCP servers, so the skill's HTTP path (curl against the poster API and the bridge)
+     is what this runner relies on.
+   - For Substack also set `SUBSTACK_PUBLICATION` (`yourname` for `yourname.substack.com`).
 5. Try it: `node wake.js --checkin` (Planino's card should now say "checked in just now"),
    then `node wake.js --once` with a post scheduled a minute ahead.
 6. Keep it running: `bash install-waker-linux.sh`, `bash install-waker-macos.sh` or
@@ -52,6 +56,13 @@ All on `Authorization: Bearer pln_poster_...`, all POST, all JSON:
 
 An AI holding a Planino MCP token can use the same rules through the MCP tools
 `list_browser_jobs`, `claim_browser_job` and `report_browser_job` instead.
+
+## The posting rules
+
+`skill/SKILL.md` is what the AI reads first on every run: the job is the only authorization,
+post the frozen payload exactly (text and media, nothing added, nothing dropped), one job per
+run, verify the live URL before saying `posted`, never retry a publish click. Any AI that can
+read a file and make HTTP calls can follow it.
 
 ## Playbooks
 

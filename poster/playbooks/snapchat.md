@@ -1,7 +1,7 @@
 # Snapchat Spotlight
 
 Status: **upload page verified 2026-09-22, no post made yet.** Sections 1, 3 and 4 name what the
-signed-in page actually showed in profile E on 2026-09-22. Sections 2, 5 and 6 are still guesses
+signed-in page actually showed in a dedicated posting profile on 2026-09-22. Sections 2, 5 and 6 are still guesses
 from the support pages; the first AI to post through it rewrites them.
 
 Payload fields used: `media_url` (a vertical video, required), `post_text` (the caption).
@@ -14,7 +14,7 @@ the profile's "Post to Snapchat" page. The bare `https://profile.snapchat.com/` 
 offers the ads and business sign-up, so do not start there. Signed in: the snapshot shows
 `button "Post to Snapchat New"` in the side bar and a `button "Drag & Drop or Upload File ..."`.
 Not signed in: `heading "Log in to Snapchat"` with `textbox "Username or Email"`. Report
-`needs_manual` with "profile E is not signed in to Snapchat" in that case; do not try to sign in.
+`needs_manual` with "the posting profile is not signed in to Snapchat" in that case; do not try to sign in.
 
 ## 2. Already posted?
 
