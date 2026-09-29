@@ -4,6 +4,10 @@
 
 [![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/michaelc0de)
 
+Made by Michael Zelbel as part of [Godspeed Mission Control](https://github.com/MichaelZelbel/godspeed-mission-control), a free personal AI you run yourself.
+
+Want to hear when the bridge learns new tricks? [Subscribe to the newsletter](https://michaelzelbel.substack.com).
+
 A small HTTP gateway that runs on **Windows, macOS, or Linux** and exposes
 a handful of safe browser actions to remote AI agents. The agents drive a
 real Chrome window — with your real, persistent logins — so they can use
