@@ -60,6 +60,19 @@ waker that starts your AI (Claude Code or Hermes) only when a post is due on a p
 API (Substack, Snapchat), and playbooks the AI follows to post through this bridge. See
 [`poster/README.md`](poster/README.md).
 
+## Running OpenClaw or Hermes on a server?
+
+Then the free DevOps kits set this bridge up for you, together with a watchdog that checks
+your agent's server and restarts the agent when it goes down:
+[OpenClaw DevOps Kit](https://ko-fi.com/s/8752f1ccc7) and
+[Hermes DevOps Kit](https://ko-fi.com/s/29efd32495), both on Ko-fi.
+
+Just the watchdog, without the rest of the kit, is free on GitHub:
+[OpenClaw](https://github.com/MichaelZelbel/openclaw-claude-code-devops-watchdog),
+[Hermes](https://github.com/MichaelZelbel/hermes-claude-code-devops-watchdog),
+[Hermes watching itself](https://github.com/MichaelZelbel/hermes-self-devops-watchdog) and
+[Paperclip](https://github.com/MichaelZelbel/paperclip-devops-watchdog).
+
 ## When to use it
 
 - Your agent needs to read or interact with a site that requires login.
