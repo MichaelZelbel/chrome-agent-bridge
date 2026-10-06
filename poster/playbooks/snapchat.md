@@ -66,4 +66,7 @@ None yet.
   larger than 50Mb to a browser not co-located with the server"), and a 193 MB video pushed into
   the page in pieces and set on the input with a DataTransfer crashed the tab. Until the bridge
   sets large files from its own disk (CDP `DOM.setFileInputFiles` with the temp path), a video
-  over 50 MB cannot go in: report `failed` without trying.
+  over 50 MB cannot go in.
+- 2026-10-06 (second run): report a video over 50 MB as `needs_manual`, not `failed`. `failed`
+  requeues the job and every attempt hits the same limit; check the size with a HEAD request on
+  `media_url` before opening the page.
