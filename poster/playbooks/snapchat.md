@@ -60,4 +60,10 @@ None yet.
 
 ## 8. Corrections
 
-(none yet)
+- 2026-10-06: `my.snapchat.com` now lands on `.../profiles/<id>/web-uploader`; the snapshot is
+  empty for about ten seconds while it loads, so wait before reading it. Section 1's controls
+  were all there. `pc_browser_upload_file` refuses files over 50 MB ("Cannot transfer files
+  larger than 50Mb to a browser not co-located with the server"), and a 193 MB video pushed into
+  the page in pieces and set on the input with a DataTransfer crashed the tab. Until the bridge
+  sets large files from its own disk (CDP `DOM.setFileInputFiles` with the temp path), a video
+  over 50 MB cannot go in: report `failed` without trying.
