@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getFreePort, startStaticServer, poll, McpStdioClient, killTree, killChromeByProfile, findInstalledChrome } from './lib/util.mjs';
+import { decodePng, pngSize, jpegSize } from './lib/png.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -50,7 +51,7 @@ async function api(method, p, body) {
   if (ct.includes('application/json')) {
     try { json = JSON.parse(buf.toString('utf8')); } catch { /* leave null */ }
   }
-  return { status: res.status, json, buf, text: buf.toString('utf8'), ct };
+  return { status: res.status, json, buf, text: buf.toString('utf8'), ct, headers: res.headers };
 }
 
 // Read a value out of the inner frame via the (pre-existing) /eval endpoint --
@@ -336,7 +337,111 @@ test('smoke: MCP exposes the new tools alongside the originals', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. Watchdog: the gateway self-heals when Chrome's CDP endpoint disappears
+// 5. Screenshots beyond the viewport (v0.5.0): ?full=1 and ?selector=..., opt-in only.
+// ---------------------------------------------------------------------------
+const near = (rgb, want, tol = 12) => rgb.every((v, i) => Math.abs(v - want[i]) <= tol);
+const evalMain = async (js) => (await api('POST', '/eval', { js })).json.result;
+
+test('screenshot without options is still the window, PNG, marked viewport', async () => {
+  const goto = await api('POST', '/goto', { url: staticSrv.url + '/long.html' });
+  assert.equal(goto.status, 200, goto.text);
+  const r = await api('GET', '/screenshot');
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.ct.includes('image/png'));
+  assert.equal(r.buf.slice(0, 4).toString('hex'), '89504e47');
+  const inner = await evalMain('[window.innerWidth * devicePixelRatio, window.innerHeight * devicePixelRatio]');
+  const size = pngSize(r.buf);
+  assert.equal(size.width, Math.round(inner[0]));
+  assert.equal(size.height, Math.round(inner[1]), 'default capture stays the viewport, not the 3000 px page');
+});
+
+test('screenshot ?full=1 takes the whole 3000 px page and puts the scroll position back', async () => {
+  await api('POST', '/eval', { js: "document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, 1000); document.documentElement.style.scrollBehavior = ''; window.scrollY" });
+  assert.equal(await evalMain('window.scrollY'), 1000);
+  const r = await api('GET', '/screenshot?full=1');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.headers.get('x-capture'), 'full');
+  const dpr = await evalMain('devicePixelRatio');
+  const img = decodePng(r.buf);
+  assert.equal(img.height, Math.round(3000 * dpr), `full page height, got ${img.height}`);
+  assert.ok(near(img.pixel(10, 5), [255, 0, 0]), `top stripe red, got ${img.pixel(10, 5)}`);
+  assert.ok(near(img.pixel(10, img.height - 5), [0, 0, 255]), `bottom stripe blue, got ${img.pixel(10, img.height - 5)}`);
+  assert.equal(await evalMain('window.scrollY'), 1000, 'scroll position restored');
+  assert.equal(await evalMain('window.__cabShot === undefined'), true, 'nothing left behind in the page');
+});
+
+test('screenshot ?full=1&max=500 cuts a long page there and says so', async () => {
+  const r = await api('GET', '/screenshot?full=1&max=500');
+  assert.equal(r.status, 200, r.text);
+  const dpr = await evalMain('devicePixelRatio');
+  assert.equal(pngSize(r.buf).height, Math.round(500 * dpr));
+  assert.equal(r.headers.get('x-capture-truncated'), '1');
+});
+
+test('screenshot ?selector= takes a whole element inside an inner scroll box and restores the box', async () => {
+  const goto = await api('POST', '/goto', { url: staticSrv.url + '/inner-scroll.html' });
+  assert.equal(goto.status, 200, goto.text);
+  await api('POST', '/eval', { js: "document.getElementById('app').scrollTop = 500" });
+  const r = await api('GET', '/screenshot?selector=%23card');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.headers.get('x-capture'), 'element');
+  assert.ok(Number(r.headers.get('x-capture-expanded')) >= 1, 'the scroll box was let out');
+  const dpr = await evalMain('devicePixelRatio');
+  const img = decodePng(r.buf);
+  assert.equal(img.width, Math.round(400 * dpr));
+  assert.equal(img.height, Math.round(2400 * dpr), `whole card, got ${img.height}`);
+  assert.ok(near(img.pixel(20, 5), [0, 255, 0]), `card top green, got ${img.pixel(20, 5)}`);
+  assert.ok(near(img.pixel(20, img.height - 5), [255, 0, 255]), `card end magenta, got ${img.pixel(20, img.height - 5)}`);
+  assert.equal(await evalMain("getComputedStyle(document.getElementById('app')).overflowY"), 'auto', 'box scrolls again');
+  assert.equal(await evalMain("document.getElementById('app').scrollTop"), 500, 'box scroll position restored');
+  assert.equal(await evalMain("document.getElementById('app').getAttribute('style')"), null, 'no inline style left');
+});
+
+test('screenshot ?full=1 on a page that scrolls inside a box shows the whole box', async () => {
+  const r = await api('GET', '/screenshot?full=1');
+  assert.equal(r.status, 200, r.text);
+  const dpr = await evalMain('devicePixelRatio');
+  const img = decodePng(r.buf);
+  assert.ok(img.height >= Math.round(2400 * dpr), `page as tall as the card, got ${img.height}`);
+  const x = Math.round(img.width / 2);
+  let magenta = false;
+  for (let y = img.height - 1; y > img.height - Math.round(400 * dpr) && !magenta; y -= 3) magenta = near(img.pixel(x, y), [255, 0, 255]);
+  assert.ok(magenta, 'the end of the card is in the picture');
+  assert.equal(await evalMain("getComputedStyle(document.body).overflow"), 'hidden', 'page layout restored');
+});
+
+test('screenshot ?selector=...&pad=8&format=jpeg answers a JPEG of the element with room around it', async () => {
+  const r = await api('GET', '/screenshot?selector=%23card&pad=8&format=jpeg&quality=70');
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.ct.includes('image/jpeg'), r.ct);
+  const dpr = await evalMain('devicePixelRatio');
+  const size = jpegSize(r.buf);
+  assert.equal(size.width, Math.round(416 * dpr));
+  assert.equal(size.height, Math.round(2416 * dpr));
+});
+
+test('screenshot ?selector= that matches nothing is a 404, a bad format a 400', async () => {
+  const r = await api('GET', '/screenshot?selector=%23nothing-here');
+  assert.equal(r.status, 404, r.text);
+  assert.match(r.json.error, /No element matched/);
+  const bad = await api('GET', '/screenshot?format=gif');
+  assert.equal(bad.status, 400, bad.text);
+  assert.equal(await evalMain('window.__cabShot === undefined'), true);
+});
+
+test('MCP pc_browser_screenshot passes full and selector through and reports the format', async () => {
+  const r = await mcp._send('tools/call', { name: 'pc_browser_screenshot', arguments: { selector: '#card', format: 'jpeg' } });
+  const part = (r.content || []).find((c) => c.type === 'image');
+  assert.ok(part, JSON.stringify(r).slice(0, 300));
+  assert.equal(part.mimeType, 'image/jpeg');
+  const dpr = await evalMain('devicePixelRatio');
+  assert.equal(jpegSize(Buffer.from(part.data, 'base64')).height, Math.round(2400 * dpr));
+  const plain = await mcp._send('tools/call', { name: 'pc_browser_screenshot', arguments: {} });
+  assert.equal(plain.content.find((c) => c.type === 'image').mimeType, 'image/png');
+});
+
+// ---------------------------------------------------------------------------
+// 6. Watchdog: the gateway self-heals when Chrome's CDP endpoint disappears
 //    (crash / closed / relaunched-without-flags after a background update).
 //    Kept LAST because it kills and relaunches the shared Chrome.
 // ---------------------------------------------------------------------------

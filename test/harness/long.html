@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Harness: a long page</title>
+  <!-- A page that scrolls as a document, 3000 px tall, with smooth scrolling on, so a full-page
+       picture must reach the blue stripe at the very bottom and come back to where it was. -->
+  <style>
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: #ffffff; }
+    #top { height: 100px; background: #ff0000; }
+    #filler { height: 2800px; background: #ffffff; }
+    #bottom { height: 100px; background: #0000ff; }
+  </style>
+</head>
+<body>
+  <div id="top"></div>
+  <div id="filler"></div>
+  <div id="bottom"></div>
+</body>
+</html>

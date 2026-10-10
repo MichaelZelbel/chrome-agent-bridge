@@ -73,7 +73,7 @@ async function callJson(method, path, body) {
   return textResult(text, !res.ok);
 }
 
-const server = new McpServer({ name: "chrome-agent-bridge", version: "0.4.0" });
+const server = new McpServer({ name: "chrome-agent-bridge", version: "0.5.0" });
 
 server.registerTool(
   "pc_browser_open",
@@ -121,19 +121,37 @@ server.registerTool(
     title: "Screenshot the current page",
     description:
       "Screenshot the current page in the user's Chrome and return it as an " +
-      "image. Useful when the HTML is hard to interpret or to confirm a view.",
-    inputSchema: {},
+      "image. Useful when the HTML is hard to interpret or to confirm a view. " +
+      "By default it shows what the window shows, at once. `full: true` takes the " +
+      "whole page top to bottom; `selector` takes one whole element (both also " +
+      "show what lies below the window, and let out a box that scrolls on its own). " +
+      "`format: \"jpeg\"` keeps a tall picture small.",
+    inputSchema: {
+      full: z.boolean().optional().describe("Take the whole page, not just the window"),
+      selector: z.string().optional().describe("CSS selector of one element to take whole"),
+      pad: z.number().optional().describe("CSS pixels of room around the element (default 0)"),
+      format: z.enum(["png", "jpeg"]).optional().describe("Image format (default png)"),
+      quality: z.number().optional().describe("JPEG quality 1-100 (default 80)"),
+    },
   },
-  async () => {
+  async ({ full, selector, pad, format, quality } = {}) => {
+    const q = new URLSearchParams();
+    if (full) q.set("full", "1");
+    if (selector) q.set("selector", selector);
+    if (pad !== undefined) q.set("pad", String(pad));
+    if (format) q.set("format", format);
+    if (quality !== undefined) q.set("quality", String(quality));
+    const qs = q.toString();
     let res;
     try {
-      res = await bridgeFetch("/screenshot", { method: "GET" });
+      res = await bridgeFetch("/screenshot" + (qs ? "?" + qs : ""), { method: "GET" });
     } catch (err) {
       return textResult(OFFLINE_HINT + " (" + err.message + ")", true);
     }
     if (!res.ok) return textResult(await res.text(), true);
     const buf = Buffer.from(await res.arrayBuffer());
-    return { content: [{ type: "image", data: buf.toString("base64"), mimeType: "image/png" }] };
+    const mimeType = (res.headers.get("content-type") || "image/png").split(";")[0];
+    return { content: [{ type: "image", data: buf.toString("base64"), mimeType }] };
   }
 );
 

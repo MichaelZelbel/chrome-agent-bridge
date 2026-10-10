@@ -5,6 +5,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
 const upload = require('./lib/upload');
+const shot = require('./lib/screenshot');
 const { readToken, makeTokenGuard } = require('./lib/auth');
 
 const execFileAsync = promisify(execFile);
@@ -290,9 +291,13 @@ app.get('/content', async (req, res) => {
 });
 
 app.get('/screenshot', async (req, res) => {
+  const opts = shot.parseScreenshotQuery(req.query);
+  if (opts.error) return res.status(400).json({ error: opts.error });
   try {
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
+
+    if (opts.mode !== 'viewport') return await screenshotBeyondViewport(page, opts, res);
 
     // Capture via a raw CDP session instead of page.screenshot(). Playwright's
     // page.screenshot() waits for fonts to load and for the page to reach a
@@ -306,22 +311,68 @@ app.get('/screenshot', async (req, res) => {
       const context = await getContext();
       const session = await context.newCDPSession(page);
       try {
-        const { data } = await session.send('Page.captureScreenshot', { format: 'png' });
+        const { data } = await session.send('Page.captureScreenshot', { format: opts.format, quality: opts.quality });
         buffer = Buffer.from(data, 'base64');
       } finally {
         await session.detach().catch(() => {});
       }
     } catch (cdpErr) {
       // Fall back to Playwright's own screenshot if the CDP path is unavailable.
-      buffer = await page.screenshot({ fullPage: false, timeout: 8000 });
+      buffer = await page.screenshot({ fullPage: false, timeout: 8000, ...pwImageOptions(opts) });
     }
 
-    res.set('Content-Type', 'image/png');
+    res.set('Content-Type', opts.contentType);
+    res.set('X-Capture', 'viewport');
     res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+// The whole page (?full=1) or one whole element (?selector=...), also what lies below the window,
+// still without Playwright's wait for fonts and stable frames (see above). The page is measured
+// and, where an inner box scrolls, let out to its full height (lib/screenshot.js), the picture is
+// taken with captureBeyondViewport and a clip, and the page is put back as it was. The answer
+// says what was taken: X-Capture full|element, X-Capture-Size <width>x<height> in CSS pixels,
+// X-Capture-Truncated 1 when the page was taller than `max` and cut there.
+// Playwright refuses a quality for PNG, even an undefined one in some versions.
+function pwImageOptions(opts) {
+  return opts.format === 'jpeg' ? { type: 'jpeg', quality: opts.quality } : { type: 'png' };
+}
+
+async function screenshotBeyondViewport(page, opts, res) {
+  const m = await page.evaluate(shot.prepareCapture, { selector: opts.selector, pad: opts.pad });
+  let buffer, fit;
+  try {
+    if (!m.found) {
+      const why = m.error || `No element matched selector "${opts.selector}"`;
+      return res.status(404).json({ error: why });
+    }
+    fit = shot.fitClip(m.rect, { max: opts.max, dpr: m.dpr });
+    try {
+      const context = await getContext();
+      const session = await context.newCDPSession(page);
+      try {
+        const { data } = await session.send('Page.captureScreenshot', {
+          format: opts.format, quality: opts.quality, clip: fit.clip, captureBeyondViewport: true,
+        });
+        buffer = Buffer.from(data, 'base64');
+      } finally {
+        await session.detach().catch(() => {});
+      }
+    } catch (cdpErr) {
+      buffer = await page.screenshot({ clip: { x: fit.clip.x, y: fit.clip.y, width: fit.clip.width, height: fit.clip.height }, timeout: 15000, ...pwImageOptions(opts) });
+    }
+  } finally {
+    await page.evaluate(shot.restoreAfterCapture).catch(() => {});
+  }
+  res.set('Content-Type', opts.contentType);
+  res.set('X-Capture', opts.mode);
+  res.set('X-Capture-Size', `${fit.clip.width}x${fit.clip.height}`);
+  if (fit.cut) res.set('X-Capture-Truncated', '1');
+  if (m.lifted) res.set('X-Capture-Expanded', String(m.lifted));
+  res.send(buffer);
+}
 
 app.post('/click', async (req, res) => {
   try {

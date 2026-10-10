@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Harness: an inner scroll box</title>
+  <!-- The usual single-page-app layout: the document never scrolls, one box does. A picture of
+       #card (2400 px) or of the whole page must show the magenta stripe at the end of #card,
+       which the window never shows without scrolling the box. -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    #app { height: 100%; overflow-y: auto; background: #ffffff; }
+    #card { width: 400px; margin: 0 auto; }
+    #card-top { height: 100px; background: #00ff00; }
+    #card-mid { height: 2200px; background: #ffffff; }
+    #card-end { height: 100px; background: #ff00ff; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="card">
+      <div id="card-top"></div>
+      <div id="card-mid"></div>
+      <div id="card-end"></div>
+    </div>
+  </div>
+</body>
+</html>
