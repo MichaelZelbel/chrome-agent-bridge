@@ -1,8 +1,8 @@
 # Snapchat Spotlight
 
-Status: **upload page verified 2026-09-22, no post made yet.** Sections 1, 3 and 4 name what the
-signed-in page actually showed in a dedicated posting profile on 2026-09-22. Sections 2, 5 and 6 are still guesses
-from the support pages; the first AI to post through it rewrites them.
+Status: **upload controls verified 2026-10-11; publication outcome still unconfirmed.**
+The signed-in uploader and validation below were observed in the dedicated posting profile.
+The successful publication confirmation and pending-review list remain unverified.
 
 Payload fields used: `media_url` (a vertical video, required), `post_text` (the caption).
 `headline`, `first_comment`, `hashtags` and the email fields are not carried here.
@@ -38,15 +38,26 @@ Before a file is chosen the page shows three checkboxes and a disabled `button "
 here on the first run.
 
 - Tick `checkbox "Post to Spotlight Reach millions of Snapchatters."`.
+- Select the intended public profile in Spotlight's profile picker. The current account is
+  Michael Zelbel. Verify it is selected; checking Spotlight alone is insufficient. On
+  2026-10-11, Post without this selection produced "Select 1 to 5 profiles". Selecting the
+  matching combobox option with ArrowDown then Enter resolved that validation.
 - Leave `checkbox "Post to Public Story ..."` and `checkbox "Save to a Public Profile Showcase
   your Snaps."` unticked unless the job says otherwise.
-- The caption (appears after upload): `post_text`.
+- The caption field's exact accessible label is `Add a description and #topics`; fill it with
+  `post_text`. It was available before attachment on 2026-10-11.
 
 ## 5. Dialogues
 
 1. `button "Post"` (or "Post to Spotlight") submits. Wait for the progress to finish; a large
    video takes a minute.
 2. The confirmation names the upload as pending review.
+
+The confirmation above has not yet been observed. On 2026-10-11, after the required profile
+selection was corrected, Post and Schedule temporarily became disabled and then enabled
+again, with no success message or visible error. The profile's Live Spotlights list still
+showed 16 September as its newest entry. This does not establish whether publication failed
+or is pending. Report `needs_manual` with the uncertain outcome and do not submit again.
 
 ## 6. Read the URL back
 
