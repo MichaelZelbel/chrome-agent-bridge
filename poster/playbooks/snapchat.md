@@ -53,6 +53,9 @@ here on the first run.
 - Leave `checkbox "Post to Public Story ..."` and `checkbox "Save to a Public Profile Showcase
   your Snaps."` unticked unless the job says otherwise.
   Recheck after attachment: the uploader automatically ticked Save on 2026-10-11.
+  Spotlight also has a separate nested save-to-profile option, automatically selected when
+  Spotlight is ticked. Unticking the top-level Save destination does not clear this option.
+  Read both controls separately and follow the job's requested destinations.
 - The caption field's exact accessible label is `Add a description and #topics`; fill it with
   `post_text`. It was available before attachment on 2026-10-11.
 
@@ -86,6 +89,14 @@ fields do not establish a requirement for business setup, billing or payment for
 organic posting. Report the exact refusal as a failure of this route and retain the post for
 recovery through the existing personal account. Do not redirect recovery into account setup.
 
+Source inspection, 2026-10-11: the selected profile was PUBLIC_PROFILE, username
+michaelzelbel, with admin access and POST_TO_SPOTLIGHT allowed; its owning organization
+matched the selected organization. The retained request had ordinary media and Spotlight
+fields only, with no ads, campaign or paid-partnership fields. The loaded handler constructs
+that payload and has no client spend-readiness check. An Apollo rejection reaches its generic
+error handler before its separate save-to-profile call. The exact missing backend condition
+remains UNKNOWN; the service name and refusal do not establish a business or billing repair.
+
 Historical setup inspection, 2026-10-11: the Open a Business Account button opened an
 "Open a Business Account on Snap" modal. It explicitly creates a business account for ads,
 with Confirm Business Name, Confirm Business email address, Add country, Add currency and
@@ -103,6 +114,15 @@ but returning to the consumer Spotlight feed still showed Log In and no uploader
 alternate publisher was verified. The current official web-upload instructions at
 https://help.snapchat.com/hc/en-us/articles/7012293789972-How-do-I-submit-a-Snap-to-Spotlight-from-the-web
 direct users to profile.snapchat.com, the same profile-manager route used here.
+
+The configured https://my.snapchat.com/embedded URL was also opened read-only on
+2026-10-11. After a temporary blank intermediate page, it redirected to the same selected
+organization/profile web-uploader with the same 5-second to 5-minute controls and no iframe.
+It exposed no alternate publisher. Across all 103 observed public JavaScript bundles,
+SSL_WEB_UPLOADER_IFRAME_INTEGRATION appeared only in the organization-config request list;
+no loaded component consumed it. The embedded upload URL likewise appeared only in runtime
+configuration. The current route always renders the existing form. Do not infer another
+working uploader from the flag or override it.
 
 ## 6. Read the URL back
 
