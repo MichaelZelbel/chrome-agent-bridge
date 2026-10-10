@@ -329,17 +329,17 @@ app.get('/screenshot', async (req, res) => {
   }
 });
 
+// Playwright refuses a quality for PNG, even an undefined one in some versions.
+function pwImageOptions(opts) {
+  return opts.format === 'jpeg' ? { type: 'jpeg', quality: opts.quality } : { type: 'png' };
+}
+
 // The whole page (?full=1) or one whole element (?selector=...), also what lies below the window,
 // still without Playwright's wait for fonts and stable frames (see above). The page is measured
 // and, where an inner box scrolls, let out to its full height (lib/screenshot.js), the picture is
 // taken with captureBeyondViewport and a clip, and the page is put back as it was. The answer
 // says what was taken: X-Capture full|element, X-Capture-Size <width>x<height> in CSS pixels,
 // X-Capture-Truncated 1 when the page was taller than `max` and cut there.
-// Playwright refuses a quality for PNG, even an undefined one in some versions.
-function pwImageOptions(opts) {
-  return opts.format === 'jpeg' ? { type: 'jpeg', quality: opts.quality } : { type: 'png' };
-}
-
 async function screenshotBeyondViewport(page, opts, res) {
   const m = await page.evaluate(shot.prepareCapture, { selector: opts.selector, pad: opts.pad });
   let buffer, fit;
