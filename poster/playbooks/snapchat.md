@@ -1,8 +1,13 @@
 # Snapchat Spotlight
 
-Status: **upload controls verified 2026-10-11; publication outcome still unconfirmed.**
+Status: **upload controls verified 2026-10-11; this web route rejected the publication attempt.**
 The signed-in uploader and validation below were observed in the dedicated posting profile.
-The successful publication confirmation and pending-review list remain unverified.
+Successful publication confirmation remains unverified.
+
+Michael wants regular organic posts from his existing personal Snapchat account. Do not
+create a business or ad account, change billing, start ads, or accept new account terms.
+The refusal recorded below is evidence that this web route failed, not evidence that an
+ordinary creator must create a business or ad account to post.
 
 Payload fields used: `media_url` (a vertical video, required), `post_text` (the caption).
 `headline`, `first_comment`, `hashtags` and the email fields are not carried here.
@@ -60,8 +65,9 @@ here on the first run.
 The confirmation above has not yet been observed. On 2026-10-11, after the required profile
 selection was corrected, Post and Schedule temporarily became disabled and then enabled
 again, with no success message or visible error. The profile's Live Spotlights list still
-showed 16 September as its newest entry. This does not establish whether publication failed
-or is pending. Report `needs_manual` with the uncertain outcome and do not submit again.
+showed 16 September as its newest entry. Those UI observations alone did not establish
+whether publication failed or was pending. For a future ambiguous attempt, report
+`needs_manual` with the uncertain outcome and do not submit again without verification.
 
 Later read-only inspection established the actual error for that attempt: Snapchat's retained
 Apollo mutation store held `PostProfileMediaMutation`, field `postProfileMedia`, loading false,
@@ -69,25 +75,29 @@ with `PERMISSION_DENIED: Organization not spend ready`. Its GraphQL extensions i
 `UPSTREAM_CLIENT_ERROR`, upstream `PERMISSION_DENIED`, service `ads-gateway`, request
 `b2c224eb-5aa7-4ad6-9942-86305fd193ee`. HTTP 200 alone did not mean publication succeeded.
 The retained profileSpotlights result included only 16, 14 and 11 September, with
-hasNextPage false; even its SUBMITTED entries were old. This is a verified account rejection.
+hasNextPage false; even its SUBMITTED entries were old. This verifies rejection of that
+attempt through the profile-manager web route.
 
 That organization's cached fields were ACTIVE, type PROVISIONAL, trustCode T100, adAccount
 null; the public profile nevertheless allowed POST_TO_SPOTLIGHT. Action Needed opened only a
 tooltip asking for a profile image, hero image and bio. It did not diagnose the readiness
-rejection. The precise missing organization or billing field was not established. Do not claim
-that payment is required, sign up for a business account, or change billing to fix it without
-explicit permission. Report the exact refusal and retain the post for account setup review.
+rejection. The precise cause of the readiness refusal was not established. These cached
+fields do not establish a requirement for business setup, billing or payment for ordinary
+organic posting. Report the exact refusal as a failure of this route and retain the post for
+recovery through the existing personal account. Do not redirect recovery into account setup.
 
-Setup review, 2026-10-11: the current Open a Business Account button opens an
+Historical setup inspection, 2026-10-11: the Open a Business Account button opened an
 "Open a Business Account on Snap" modal. It explicitly creates a business account for ads,
 with Confirm Business Name, Confirm Business email address, Add country, Add currency and
 Phone number fields, a "Connect this Profile to your new Ad Account" checkbox, and optional
 promotional-call/SMS consent. Its Create a Business button accepts the Terms of Service and
-Business Services Terms on the business's behalf. This is an account-creation/terms approval
-boundary, not a verified address-only edit. Nothing was entered or submitted during review.
-The defaults shown were United States and USD; never assume they match the person.
+Business Services Terms on the business's behalf. Nothing was entered or submitted during
+review, and the unfilled modal was subsequently cancelled. The defaults shown were United
+States and USD. Michael explicitly rejected this business/ad-account route; these observations
+are historical evidence only and are not a recovery procedure or a request for setup approval.
 
-The consumer https://www.snapchat.com/spotlight feed had no upload/create control, and its
+During that inspection, the consumer https://www.snapchat.com/spotlight feed had no
+upload/create control, and its
 Log In link led to Web chat. Web chat loaded the existing account without new credentials,
 but returning to the consumer Spotlight feed still showed Log In and no uploader. No
 alternate publisher was verified. The current official web-upload instructions at
