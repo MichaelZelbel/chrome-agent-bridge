@@ -60,6 +60,17 @@ None yet.
 
 ## 8. Corrections
 
+- 2026-10-11: Bridge v0.6.0 sets the local disk file through same-host CDP;
+  the old 50 MB handoff restriction below no longer applies. The original
+  193,115,257-byte video crossed the bridge successfully. Snapchat then spent
+  time processing it, during which snapshots and screenshots timed out.
+  A separate 41,794,284-byte posting copy also made the page temporarily
+  unresponsive after attachment. Without another attachment or restart, the
+  page recovered roughly two minutes later: both video previews reported
+  244.2 seconds, 1080x1920 and readyState 4, and Post was enabled. A timeout
+  immediately after a successful attachment is not proof of a crash or a
+  rejected file. Allow processing time and re-read the page before restarting
+  Chrome or attaching the file again. These checks did not press Post.
 - 2026-10-06: `my.snapchat.com` now lands on `.../profiles/<id>/web-uploader`; the snapshot is
   empty for about ten seconds while it loads, so wait before reading it. Section 1's controls
   were all there. `pc_browser_upload_file` refuses files over 50 MB ("Cannot transfer files
