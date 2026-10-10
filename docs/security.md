@@ -80,5 +80,34 @@ network: a token on an internet-exposed port is still an internet-exposed browse
 `POST /upload-file {url, label | selector | click, filename?}` downloads the URL on the bridge
 machine and hands the file to a file input on the current page. The temp copy lives under the
 system temp directory for an hour (the page reads it when the form submits) and is then swept.
-Size cap: `CAB_UPLOAD_MAX_BYTES` (default 1.5 GB). The URL is fetched by the bridge machine, so
-only URLs that machine may reach can be uploaded.
+Size cap: 512 MiB (536870912 bytes). `CAB_UPLOAD_MAX_BYTES` may reduce this hard ceiling.
+The bridge streams bytes with backpressure to a mode-0600 temporary file and hands its path to
+Chrome through CDP. File contents never pass through MCP or base64. The transfer has a ten-minute
+total deadline and a thirty-second idle timeout; partial and rejected downloads are removed.
+Successful files are retained for one hour so the page can read them, with startup and periodic
+cleanup. Reservations across profiles cap retained and in-flight temporary storage at 2 GiB,
+with 256 MiB of free space left in reserve. A single bridge accepts one upload at a time.
+
+Remote media must use public HTTPS on the default port, without URL credentials or fragments.
+Every DNS result and every redirect is checked against private, loopback, link-local, CGNAT,
+multicast and reserved address ranges, then the validated IP is pinned to the request. Responses
+are streamed even when Content-Length is absent, and the byte cap is enforced while streaming.
+Request logs omit file URLs, including signed URL query parameters.
+
+`GET /capabilities` (same bearer policy as other actions) is the source for the effective configured
+transport limit. The waker forwards that exact object as `upload_capabilities` in each Planino
+checkin and immediately before starting a queued runner. An unreachable or old bridge sends null
+so Planino can refuse media jobs instead of trusting a stale limit. Destination platform limits
+remain separate and may be smaller or undocumented.
+
+
+Large-file path uploads require the gateway and Chrome to share one local filesystem, with a
+loopback CDP endpoint. The pinned Playwright version receives `isLocal:true` only for loopback
+CDP hosts so it uses a disk path instead of its remote 50 MiB buffer/base64 fallback. A remote
+CDP URL advertises upload unavailable (`available:false`, `maxBytes:0`) and rejects before
+fetching any media. Operators must not point a loopback CDP URL at a tunnel to a remote browser.
+
+Controlled verification: `CAB_TEST_VIDEO_URL=<existing-public-https-video> node --test
+test/large-transfer.test.mjs` downloads the source read-only, uses a disposable headless Chrome
+profile and a plain local input with no submit control, checks HTTP/MCP rejection parity,
+compares the streamed checksum, reads the browser File's size/type, and removes the test copy.

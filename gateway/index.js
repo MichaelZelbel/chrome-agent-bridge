@@ -5,6 +5,12 @@ const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
 const upload = require('./lib/upload');
+const transfer = require('./lib/transfer');
+let uploadInFlight = false;
+fs.mkdirSync(upload.tempDir(), { recursive: true, mode: 0o700 });
+fs.chmodSync(upload.tempDir(), 0o700);
+upload.cleanOldTemp();
+setInterval(() => upload.cleanOldTemp(), 60000).unref();
 const shot = require('./lib/screenshot');
 const { readToken, makeTokenGuard } = require('./lib/auth');
 
@@ -142,7 +148,7 @@ function cdpConnectError(err) {
 app.use((req, res, next) => {
   const start = Date.now();
   const reqBody = req.method !== 'GET' && req.body && Object.keys(req.body).length
-    ? ' ' + JSON.stringify(req.body).slice(0, 200)
+    ? ' ' + JSON.stringify(req.path === '/upload-file' ? { ...req.body, url: '[file URL omitted]' } : req.body).slice(0, 200)
     : '';
   const origJson = res.json.bind(res);
   res.json = (body) => {
@@ -192,11 +198,11 @@ let cdpBrowser = null;
 // bring Chrome back (a no-op when the watchdog is disabled) and try once more.
 async function connectWithWatchdog() {
   try {
-    return await chromium.connectOverCDP(CDP_URL);
+    return await chromium.connectOverCDP(CDP_URL, { isLocal: transfer.isLocalCdp() });
   } catch (err) {
     if (await tryRelaunchChrome()) {
       try {
-        return await chromium.connectOverCDP(CDP_URL);
+        return await chromium.connectOverCDP(CDP_URL, { isLocal: transfer.isLocalCdp() });
       } catch (err2) {
         throw cdpConnectError(err2);
       }
@@ -258,6 +264,8 @@ async function newBridgePage(url) {
 }
 
 const NO_PAGE_ERR = { error: 'No bridge page open yet. Call POST /goto first.' };
+
+app.get('/capabilities', (_req, res) => res.json(transfer.capabilities()));
 
 app.get('/health', async (req, res) => {
   try {
@@ -836,33 +844,23 @@ app.post('/upload-file', async (req, res) => {
   const parsed = upload.parseUploadRequest(req.body);
   if (!parsed.ok) return res.status(400).json({ error: parsed.error });
   const t = parsed.target;
+  if (!transfer.isLocalCdp()) return res.status(422).json({ error: 'File upload requires Chrome and the bridge on the same machine using a loopback CDP URL.', code: 'UPLOAD_METHOD_UNAVAILABLE', retryable: false, uploadMethod: 'browser_bridge', limitBytes: 0, remedy: 'Connect the bridge to its local Chrome before attaching media.' });
+  if (uploadInFlight) return res.status(409).json({ error: 'Another file upload is in progress.', code: 'UPLOAD_BUSY', retryable: true });
+  uploadInFlight = true;
+  let tmp;
+  let handedOff = false;
+  let releaseReservation;
+  const controller = new AbortController();
+  const onClose = () => { if (!res.writableEnded) controller.abort(); };
+  res.on('close', onClose);
   try {
     const page = await getBridgePage();
     if (!page) return res.status(409).json(NO_PAGE_ERR);
 
     upload.cleanOldTemp();
-    fs.mkdirSync(upload.tempDir(), { recursive: true });
-    const tmp = upload.tempPathFor(t.url, t.filename);
-
-    let response;
-    try {
-      response = await fetch(t.url, { signal: AbortSignal.timeout(180000), redirect: 'follow' });
-    } catch (err) {
-      return res.status(502).json({ error: `Could not fetch ${t.url}: ${err.message}` });
-    }
-    if (!response.ok) {
-      return res.status(502).json({ error: `Could not fetch ${t.url}: HTTP ${response.status}` });
-    }
-    const limit = upload.maxBytes();
-    const declared = parseInt(response.headers.get('content-length') || '0', 10);
-    if (declared > limit) {
-      return res.status(413).json({ error: `File is ${declared} bytes, over the ${limit} byte limit` });
-    }
-    const buf = Buffer.from(await response.arrayBuffer());
-    if (buf.length > limit) {
-      return res.status(413).json({ error: `File is ${buf.length} bytes, over the ${limit} byte limit` });
-    }
-    fs.writeFileSync(tmp, buf);
+    releaseReservation = transfer.checkDisk(upload.tempDir());
+    tmp = upload.tempPathFor(t.url, t.filename);
+    const downloaded = await transfer.download(t.url, tmp, { signal: controller.signal });
     const file = path.basename(tmp);
 
     // Way 1: the site opens its own chooser when a control is clicked.
@@ -885,7 +883,8 @@ app.post('/upload-file', async (req, res) => {
       }
       const chooser = await chooserPromise;
       await chooser.setFiles(tmp);
-      return res.json({ success: true, bytes: buf.length, file, via: 'filechooser' });
+      handedOff = true;
+      return res.json({ success: true, bytes: downloaded.bytes, sha256: downloaded.sha256, limitBytes: transfer.maxBytes(), uploadMethod: 'browser_bridge', file, via: 'filechooser' });
     }
 
     // Way 2 and 3: a file input named by selector or by label. A hidden file
@@ -904,13 +903,19 @@ app.post('/upload-file', async (req, res) => {
       }
       if (loc && (await loc.count()) > 0) {
         await loc.first().setInputFiles(tmp);
-        return res.json({ success: true, bytes: buf.length, file, via: t.selector ? 'selector' : 'label' });
+        handedOff = true;
+        return res.json({ success: true, bytes: downloaded.bytes, sha256: downloaded.sha256, limitBytes: transfer.maxBytes(), uploadMethod: 'browser_bridge', file, via: t.selector ? 'selector' : 'label' });
       }
     }
     const wanted = t.selector ? `selector "${t.selector}"` : `label "${t.label}"`;
     return res.status(404).json({ error: `No file input found for ${wanted}` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (!res.destroyed) res.status(err.status || 500).json(transfer.failure(err));
+  } finally {
+    res.off('close', onClose);
+    releaseReservation?.();
+    if (tmp && !handedOff) await fs.promises.unlink(tmp).catch(() => {});
+    uploadInFlight = false;
   }
 });
 

@@ -73,7 +73,11 @@ async function callJson(method, path, body) {
   return textResult(text, !res.ok);
 }
 
-const server = new McpServer({ name: "chrome-agent-bridge", version: "0.5.0" });
+const server = new McpServer({ name: "chrome-agent-bridge", version: "0.6.0" });
+
+server.registerTool("pc_browser_capabilities", {
+  title: "Read live file upload capabilities", description: "Read the bridge's current upload byte limit, transfer timeout and URL policy. These are transport limits; the destination platform may impose smaller limits.", inputSchema: {},
+}, async () => callJson("GET", "/capabilities"));
 
 server.registerTool(
   "pc_browser_open",

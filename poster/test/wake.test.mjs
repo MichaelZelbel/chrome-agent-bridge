@@ -151,3 +151,20 @@ test('the real runner spawns a script with the job in its environment and kills 
   assert.notEqual(k.code, 0);
   assert.ok(Date.now() - started < 10000, 'killed within the timeout');
 });
+
+
+test('checkin forwards exact live capabilities and invalidates unavailable capabilities', async () => {
+  const calls = [];
+  const caps = { schemaVersion: 1, version: '0.6.0', upload: { method: 'browser_bridge', maxBytes: 536870912 } };
+  const cfg = cfgFor('https://planino.example', { bridgeUrl: 'http://bridge.example' });
+  const fetchFn = async (url, init) => {
+    if (url.endsWith('/health')) return { ok: true };
+    if (url.endsWith('/capabilities')) return { ok: true, json: async () => caps };
+    calls.push(JSON.parse(init.body));
+    return { ok: true, text: async () => JSON.stringify({ poster: {} }) };
+  };
+  await waker.checkin(cfg, { fetch: fetchFn });
+  assert.deepEqual(calls[0].upload_capabilities, caps);
+  await waker.checkin(cfg, { fetch: async (url, init) => url.endsWith('/capabilities') ? { ok: false } : fetchFn(url, init) });
+  assert.equal(calls[1].upload_capabilities, null);
+});

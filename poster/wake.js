@@ -61,6 +61,7 @@ function loadConfig(env = process.env, file = path.join(HERE, 'poster.env')) {
     posterUrl: String(get('PLANINO_POSTER_URL', 'https://suzqnyvfjbmnoipnlobk.supabase.co/functions/v1/browser-poster')).replace(/\/+$/, ''),
     token: String(get('PLANINO_POSTER_TOKEN', '')),
     runner,
+    bridgeToken: String(get('BRIDGE_TOKEN', '')),
     bridgeUrl: String(get('BRIDGE_URL', 'http://127.0.0.1:3007')).replace(/\/+$/, ''),
     pollSec: Number(get('POLL_SEC', 120)),
     checkinSec: Number(get('CHECKIN_SEC', 300)),
@@ -117,6 +118,18 @@ async function bridgeHealthy(cfg, fetchFn = fetch) {
   } catch (_) {
     return false;
   }
+}
+
+async function bridgeCapabilities(cfg, fetchFn = fetch) {
+  try {
+    const res = await fetchFn(`${cfg.bridgeUrl}/capabilities`, { signal: AbortSignal.timeout(5000),
+      headers: cfg.bridgeToken ? { Authorization: `Bearer ${cfg.bridgeToken}` } : {} });
+    if (!res.ok) return null;
+    const value = await res.json();
+    if (value.schemaVersion !== 1 || value.upload?.method !== 'browser_bridge' ||
+        !Number.isSafeInteger(value.upload.maxBytes) || value.upload.maxBytes <= 0) return null;
+    return value;
+  } catch { return null; }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,9 +217,14 @@ async function tick(cfg, deps = {}) {
   if (queued === 0) return { action: 'idle' };
   if (!acquireLock(cfg.lockFile, cfg.runTimeoutSec)) return { action: 'busy', queued };
   try {
+    // Refresh the connected bridge immediately before a runner can claim a job.
+    // A failed checkin must not launch publishing against stale capabilities.
+    await checkin(cfg, { fetch: fetchFn });
     const job = (peek && peek.oldest) || {};
     const result = await run(cfg, job, log);
     return { action: 'ran', queued, job, code: result.code, seconds: result.seconds };
+  } catch (err) {
+    return { action: 'checkin_failed', error: err.message };
   } finally {
     releaseLock(cfg.lockFile);
   }
@@ -216,7 +234,8 @@ async function checkin(cfg, deps = {}) {
   const fetchFn = deps.fetch || fetch;
   const bridgeOk = await bridgeHealthy(cfg, fetchFn);
   const pkg = safeVersion();
-  const body = { harness: cfg.harness, version: pkg, bridge_ok: bridgeOk };
+  const uploadCapabilities = bridgeOk ? await bridgeCapabilities(cfg, fetchFn) : null;
+  const body = { harness: cfg.harness, version: pkg, bridge_ok: bridgeOk, upload_capabilities: uploadCapabilities };
   const res = await planino(cfg, 'checkin', body, fetchFn);
   return { bridgeOk, poster: res && res.poster };
 }
@@ -285,7 +304,7 @@ async function main(argv = process.argv.slice(2)) {
   }
 }
 
-module.exports = { loadConfig, validateConfig, readEnvFile, planino, bridgeHealthy, acquireLock, releaseLock, runRunner, tick, checkin };
+module.exports = { loadConfig, validateConfig, readEnvFile, planino, bridgeHealthy, bridgeCapabilities, acquireLock, releaseLock, runRunner, tick, checkin };
 
 if (require.main === module) {
   main().catch((err) => {

@@ -319,6 +319,7 @@ Base URL: `http://<host>:3007` (default port; configurable via `PORT`).
 
 | Method | Path          | Body                                              | Returns                              |
 |--------|---------------|---------------------------------------------------|--------------------------------------|
+| GET    | `/capabilities` | | Current upload ceiling, transfer deadline and URL policy |
 | GET    | `/health`     | —                                                 | `{ "status": "ok" }`                 |
 | POST   | `/goto`       | `{ "url": "<url>" }`                              | `{ "success": true, "url": "..." }`  |
 | GET    | `/content`    | —                                                 | full page HTML (text)                |
@@ -484,3 +485,17 @@ Either way, thanks for using the bridge.
 ## License
 
 [MIT](LICENSE) — Copyright (c) 2026 Michael Zelbel.
+
+
+### Large media uploads (v0.6.0)
+
+`/upload-file` streams public HTTPS files to disk, up to 512 MiB (536870912 bytes). Read
+`GET /capabilities` or `pc_browser_capabilities` for the actual configured ceiling; an operator
+may lower it using `CAB_UPLOAD_MAX_BYTES`. A limit error returns HTTP 413 with `code`,
+`retryable:false`, `fileSizeBytes`, `limitBytes`, `uploadMethod` and a remedy. Attach a smaller or
+otherwise compatible file. Unknown destination platform limits do not imply compatibility.
+
+The stream is cancelled after ten minutes, thirty seconds without data, or caller disconnect.
+Partial files are removed; completed files remain for an hour with periodic cleanup. Temporary
+storage is bounded across profiles. Private URLs, unsafe redirects and URL credentials are
+refused. See [upload security](docs/security.md#upload-file).

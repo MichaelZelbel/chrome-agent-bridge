@@ -48,7 +48,7 @@ All on `Authorization: Bearer pln_poster_...`, all POST, all JSON:
 
 | Call | What it does |
 |---|---|
-| `/checkin` `{harness, version, bridge_ok}` | Says the poster is alive; Planino shows amber after an hour of silence. |
+| `/checkin` `{harness, version, bridge_ok, upload_capabilities}` | Says the poster is alive; Planino shows amber after an hour of silence. |
 | `/peek` | `{queued, oldest}` for this account. No side effect. |
 | `/claim` `{job_id?}` | Takes the named job, or the oldest queued one. Returns the frozen payload: what to post. 204 when nothing waits. |
 | `/report` `{job_id, result, post_url?, error?, screenshot?, snapshot?, metrics?}` | `posted` (with the live URL), `needs_manual` (a person must look; never retried) or `failed` (nothing was published; Planino queues another attempt, up to three). |
@@ -79,3 +79,11 @@ schedule, never visits another site, does one job per run, and stops at 40 tool 
 minutes. Before publishing it looks for the same post already live from the last hour, in case
 an earlier attempt died after the publish click. Only a verified live URL becomes `posted`;
 anything unclear is handed back as `needs_manual`.
+
+
+The waker reads the connected bridge's live `/capabilities` on every checkin and just before
+starting a queued runner. It forwards the complete response as `upload_capabilities`, or null
+when unavailable. Planino uses this expiring declaration for validation at attachment, settings,
+scheduling and claim. Use `node wake.js --checkin` to refresh capabilities without starting a job.
+A deterministic media incompatibility must be reported as `needs_manual`, with the file size,
+limit, upload method and remedy, and must never be retried as an ordinary transient failure.

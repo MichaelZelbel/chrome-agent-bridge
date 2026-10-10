@@ -54,7 +54,16 @@ Bridge, and the poster token from Planino (Settings, AI poster).
 1. **Check the browser.** `GET $BRIDGE_URL/health` (or `pc_browser_health`). No answer: report
    nothing, say so, stop. Planino hands an unclaimed job back after thirty minutes with the
    right sentence.
-2. **Claim.** The job id you were given, or none for the oldest queued one. Nothing back means
+2. **Refresh upload capabilities, then claim.** Read `GET $BRIDGE_URL/capabilities`
+   (or `pc_browser_capabilities`) and POST `/checkin` with `bridge_ok: true` and the exact
+   response as `upload_capabilities` before claiming. An unavailable capability response
+   must be sent as `upload_capabilities: null`; stop instead of attempting media upload.
+   Planino validates the actual connected publisher and current media again at claim time.
+   A structured incompatibility is final for this file and route: report `needs_manual`,
+   include its size, limit, upload method and remedy, and never retry it or omit the media.
+   If `/upload-file` rejects with `UPLOAD_TOO_LARGE` or `UPLOAD_URL_REJECTED`, likewise
+   report `needs_manual`. After any uncertain publish outcome, never click publish again.
+   **Claim.** The job id you were given, or none for the oldest queued one. Nothing back means
    nothing to do: say so and stop. Keep the `payload` and the job `id`.
 3. **Open the playbook** for `payload.platform` and read it whole. No playbook for the platform:
    report `needs_manual` with "No playbook for <platform> yet" and stop.
