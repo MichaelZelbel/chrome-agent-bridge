@@ -41,9 +41,13 @@ here on the first run.
 - Select the intended public profile in Spotlight's profile picker. The current account is
   Michael Zelbel. Verify it is selected; checking Spotlight alone is insufficient. On
   2026-10-11, Post without this selection produced "Select 1 to 5 profiles". Selecting the
-  matching combobox option with ArrowDown then Enter resolved that validation.
+  matching combobox option with ArrowDown then Enter resolved that validation. The combobox
+  had no accessible label or name; it was the only combobox after Save was unticked. A visible
+  Michael Zelbel selection and selected option confirmed it. Clicking the virtual option
+  directly timed out.
 - Leave `checkbox "Post to Public Story ..."` and `checkbox "Save to a Public Profile Showcase
   your Snaps."` unticked unless the job says otherwise.
+  Recheck after attachment: the uploader automatically ticked Save on 2026-10-11.
 - The caption field's exact accessible label is `Add a description and #topics`; fill it with
   `post_text`. It was available before attachment on 2026-10-11.
 
@@ -58,6 +62,21 @@ selection was corrected, Post and Schedule temporarily became disabled and then 
 again, with no success message or visible error. The profile's Live Spotlights list still
 showed 16 September as its newest entry. This does not establish whether publication failed
 or is pending. Report `needs_manual` with the uncertain outcome and do not submit again.
+
+Later read-only inspection established the actual error for that attempt: Snapchat's retained
+Apollo mutation store held `PostProfileMediaMutation`, field `postProfileMedia`, loading false,
+with `PERMISSION_DENIED: Organization not spend ready`. Its GraphQL extensions identified
+`UPSTREAM_CLIENT_ERROR`, upstream `PERMISSION_DENIED`, service `ads-gateway`, request
+`b2c224eb-5aa7-4ad6-9942-86305fd193ee`. HTTP 200 alone did not mean publication succeeded.
+The retained profileSpotlights result included only 16, 14 and 11 September, with
+hasNextPage false; even its SUBMITTED entries were old. This is a verified account rejection.
+
+That organization's cached fields were ACTIVE, type PROVISIONAL, trustCode T100, adAccount
+null; the public profile nevertheless allowed POST_TO_SPOTLIGHT. Action Needed opened only a
+tooltip asking for a profile image, hero image and bio. It did not diagnose the readiness
+rejection. The precise missing organization or billing field was not established. Do not claim
+that payment is required, sign up for a business account, or change billing to fix it without
+explicit permission. Report the exact refusal and retain the post for account setup review.
 
 ## 6. Read the URL back
 
