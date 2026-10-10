@@ -322,7 +322,7 @@ Base URL: `http://<host>:3007` (default port; configurable via `PORT`).
 | GET    | `/health`     | —                                                 | `{ "status": "ok" }`                 |
 | POST   | `/goto`       | `{ "url": "<url>" }`                              | `{ "success": true, "url": "..." }`  |
 | GET    | `/content`    | —                                                 | full page HTML (text)                |
-| GET    | `/screenshot` | —                                                 | PNG bytes (`image/png`)              |
+| GET    | `/screenshot` | query `full`?, `selector`?, `pad`?, `max`?, `format`?, `quality`? | PNG bytes (`image/png`), or JPEG with `format=jpeg` |
 | POST   | `/click`      | `{ "selector": "<css>" }`                         | `{ "success": true }`                |
 | POST   | `/type`       | `{ "selector": "<css>", "text": "<text>", "frame"?, "mode"?, "clear"? }` | `{ "success": true, "value": "<resulting value>" }` |
 | POST   | `/type-text`  | `{ "text": "<text>", "pressEnterAfter"?: bool }`  | `{ "success": true }`                |
@@ -330,6 +330,24 @@ Base URL: `http://<host>:3007` (default port; configurable via `PORT`).
 | POST   | `/press`      | `{ "key": "<key>" }`                              | `{ "success": true }`                |
 
 Errors return HTTP 4xx/5xx with `{ "error": "<message>" }`.
+
+#### Screenshots of a whole page or a whole element (v0.5.0)
+
+`GET /screenshot` with no query is unchanged: what the window shows, as PNG, at once. Two opt-in
+options take more:
+
+- **`?full=1`** takes the whole page from top to bottom, also what lies below the window.
+- **`?selector=<css>`** takes one element whole (for example a profile card), also the part below
+  the window. `pad=<css px>` adds room around it.
+
+Both let out a box that scrolls on its own (the usual single-page-app layout, where the document
+never scrolls) for the moment of the picture, then put the page back exactly: inline styles,
+scroll positions, nothing left behind. `max=<css px>` caps the height (default 12000; longer
+pages are cut there), and `format=jpeg&quality=80` keeps a tall picture small. The answer says
+what was taken in `X-Capture` (`viewport`, `full` or `element`), `X-Capture-Size`
+(`<width>x<height>` in CSS pixels) and, when cut, `X-Capture-Truncated: 1`. A selector that
+matches nothing answers 404. The picture is taken immediately, like the plain one, so wait for
+the page to finish loading first (`/wait`, or poll `/eval`).
 
 #### Typing into nested iframes & code editors
 

@@ -33,7 +33,8 @@ This is **NOT** a normal browser and is **NOT** a CDP endpoint.
 - `GET  /health`
 - `POST /goto`        body: `{ "url": "<url>" }`
 - `GET  /content`     returns full page HTML
-- `GET  /screenshot`  returns PNG bytes
+- `GET  /screenshot`  returns PNG bytes of the window; `?full=1` the whole page,
+  `?selector=<css>` one whole element, `&format=jpeg` a smaller JPEG
 - `POST /click`       body: `{ "selector": "<css>" }`
 - `POST /type`        body: `{ "selector": "<css>", "text": "<text>", "frame"?, "mode"?, "clear"? }`
   (frame-aware; trusted keystrokes by default. `frame` = URL substring to reach a
