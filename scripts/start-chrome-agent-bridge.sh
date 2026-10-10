@@ -94,6 +94,11 @@ export CAB_PROFILE_DIR="$USER_DATA_DIR"
 mkdir -p "$USER_DATA_DIR"
 
 # --- Start Chrome -----------------------------------------------------------
+# A gateway update must not open another tab or replace a healthy Chrome session.
+# CDP is loopback-only. Reuse it when present, preserving in-progress forms.
+if curl -fsS --max-time 2 "http://$CDP_ADDRESS:$CDP_PORT/json/version" >/dev/null 2>&1; then
+  printf 'Reusing Chrome on %s:%s\n' "$CDP_ADDRESS" "$CDP_PORT"
+else
 printf 'Starting Chrome with remote debugging on %s:%s\n' "$CDP_ADDRESS" "$CDP_PORT"
 printf 'Profile: %s\n' "$USER_DATA_DIR"
 printf 'Binary:  %s\n' "$CHROME_BIN"
@@ -139,6 +144,8 @@ fi
 
 # Give Chrome a moment to initialize the debugging endpoint
 sleep 5
+
+fi
 
 # --- Start the gateway ------------------------------------------------------
 printf 'Starting Chrome Agent Bridge gateway...\n'
