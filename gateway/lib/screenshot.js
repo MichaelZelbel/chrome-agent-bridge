@@ -124,17 +124,33 @@ function prepareCapture(args) {
   // 'instant', because a page with smooth scrolling would still be on its way up when measured.
   window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
 
-  const dpr = window.devicePixelRatio || 1;
-  if (target) {
-    const r = target.getBoundingClientRect();
-    const pad = args.pad || 0;
-    const x = Math.max(0, r.left + window.scrollX - pad);
-    const y = Math.max(0, r.top + window.scrollY - pad);
-    return { found: true, dpr, lifted: st.lifted, rect: { x, y, width: r.width + 2 * pad, height: r.height + 2 * pad } };
-  }
-  const width = Math.max(root.clientWidth, Math.min(root.scrollWidth, root.clientWidth * 2));
-  const height = Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0);
-  return { found: true, dpr, lifted: st.lifted, rect: { x: 0, y: 0, width, height } };
+  // Kept with the rest, so the gateway can measure again after it made the window taller.
+  st.measure = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const scope = target || document;
+    // Frames that show something: Chrome paints one from another site only inside the window.
+    const frames = [...scope.querySelectorAll('iframe, frame')].filter((f) => {
+      const r = f.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }).length;
+    if (target) {
+      const r = target.getBoundingClientRect();
+      const pad = args.pad || 0;
+      const x = Math.max(0, r.left + window.scrollX - pad);
+      const y = Math.max(0, r.top + window.scrollY - pad);
+      return { found: true, dpr, frames, lifted: st.lifted, rect: { x, y, width: r.width + 2 * pad, height: r.height + 2 * pad } };
+    }
+    const width = Math.max(root.clientWidth, Math.min(root.scrollWidth, root.clientWidth * 2));
+    const height = Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0);
+    return { found: true, dpr, frames, lifted: st.lifted, rect: { x: 0, y: 0, width, height } };
+  };
+  return st.measure();
+}
+
+// The same measurement again, on a page prepareCapture has already made ready.
+function measureCapture() {
+  const st = window.__cabShot;
+  return st && st.measure ? st.measure() : { found: false };
 }
 
 function restoreAfterCapture() {
@@ -153,4 +169,7 @@ function restoreAfterCapture() {
   return true;
 }
 
-module.exports = { parseScreenshotQuery, fitClip, prepareCapture, restoreAfterCapture, DEFAULT_MAX, DEVICE_LIMIT };
+// How long frames get to paint the part of the page that the taller window now shows.
+const FRAME_SETTLE_MS = 1200;
+
+module.exports = { parseScreenshotQuery, fitClip, prepareCapture, measureCapture, restoreAfterCapture, DEFAULT_MAX, DEVICE_LIMIT, FRAME_SETTLE_MS };

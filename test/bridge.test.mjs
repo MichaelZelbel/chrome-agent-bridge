@@ -429,7 +429,26 @@ test('screenshot ?selector= that matches nothing is a 404, a bad format a 400', 
   assert.equal(await evalMain('window.__cabShot === undefined'), true);
 });
 
+test('screenshot ?selector= paints a frame from another site that lies below the window', async () => {
+  const goto = await api('POST', '/goto', { url: staticSrv.url + '/frame-card.html' });
+  assert.equal(goto.status, 200, goto.text);
+  await poll(async () => (await api('POST', '/eval', { js: '!!window.__painted', frame: 'cyan.html' })).json?.result === true,
+    { label: 'cross-site frame loaded', timeout: 15000 });
+  const inner = await evalMain('[innerWidth, innerHeight]');
+  const r = await api('GET', '/screenshot?selector=%23card');
+  assert.equal(r.status, 200, r.text);
+  const dpr = await evalMain('devicePixelRatio');
+  const img = decodePng(r.buf);
+  assert.equal(img.height, Math.round(1900 * dpr));
+  const mid = img.pixel(Math.round(200 * dpr), Math.round(1650 * dpr));
+  assert.ok(near(mid, [0, 255, 255]), `the frame is painted (cyan), got ${mid}`);
+  assert.ok(near(img.pixel(20, img.height - 5), [255, 0, 255]), 'and the end of the card is there');
+  assert.deepEqual(await evalMain('[innerWidth, innerHeight]'), inner, 'the window is its own size again');
+});
+
 test('MCP pc_browser_screenshot passes full and selector through and reports the format', async () => {
+  const goto = await api('POST', '/goto', { url: staticSrv.url + '/inner-scroll.html' });
+  assert.equal(goto.status, 200, goto.text);
   const r = await mcp._send('tools/call', { name: 'pc_browser_screenshot', arguments: { selector: '#card', format: 'jpeg' } });
   const part = (r.content || []).find((c) => c.type === 'image');
   assert.ok(part, JSON.stringify(r).slice(0, 300));

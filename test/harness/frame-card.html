@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Harness: a frame from another site below the window</title>
+  <!-- Like a music player embedded in a profile: a frame from another site (localhost when the
+       page is 127.0.0.1, and the other way round) far below the window. Chrome paints such a frame
+       only inside the window, so a picture of #card must make room for it. -->
+  <style>
+    body { margin: 0; background: #ffffff; }
+    #card { width: 400px; margin: 0 auto; }
+    .spacer { height: 1500px; background: #ffffff; }
+    #f { display: block; width: 400px; height: 300px; border: 0; }
+    .end { height: 100px; background: #ff00ff; }
+  </style>
+</head>
+<body>
+  <div id="card">
+    <div class="spacer"></div>
+    <iframe id="f" title="other site"></iframe>
+    <div class="end"></div>
+  </div>
+  <script>
+    var other = location.hostname === '127.0.0.1' ? 'localhost' : '127.0.0.1';
+    document.getElementById('f').src = location.protocol + '//' + other + ':' + location.port + '/cyan.html';
+  </script>
+</body>
+</html>

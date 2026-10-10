@@ -352,12 +352,27 @@ async function screenshotBeyondViewport(page, opts, res) {
     try {
       const context = await getContext();
       const session = await context.newCDPSession(page);
+      let taller = false;
       try {
+        // A frame from another site (a music player, a video) is painted only inside the window,
+        // so with frames in the picture the window is made as tall as the picture for the moment
+        // of it, and measured again. The override belongs to this debugging session: Chrome drops
+        // it when the session ends, even if this request dies half way.
+        if (m.frames > 0) {
+          const height = Math.ceil(fit.clip.y + fit.clip.height);
+          await session.send('Emulation.setDeviceMetricsOverride', { width: 0, height, deviceScaleFactor: 0, mobile: false });
+          taller = true;
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          await new Promise((r) => setTimeout(r, shot.FRAME_SETTLE_MS));
+          const again = await page.evaluate(shot.measureCapture);
+          if (again && again.found) fit = shot.fitClip(again.rect, { max: opts.max, dpr: again.dpr });
+        }
         const { data } = await session.send('Page.captureScreenshot', {
           format: opts.format, quality: opts.quality, clip: fit.clip, captureBeyondViewport: true,
         });
         buffer = Buffer.from(data, 'base64');
       } finally {
+        if (taller) await session.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
         await session.detach().catch(() => {});
       }
     } catch (cdpErr) {
@@ -371,6 +386,7 @@ async function screenshotBeyondViewport(page, opts, res) {
   res.set('X-Capture-Size', `${fit.clip.width}x${fit.clip.height}`);
   if (fit.cut) res.set('X-Capture-Truncated', '1');
   if (m.lifted) res.set('X-Capture-Expanded', String(m.lifted));
+  if (m.frames) res.set('X-Capture-Frames', String(m.frames));
   res.send(buffer);
 }
 
