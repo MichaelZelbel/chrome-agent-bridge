@@ -58,7 +58,7 @@ test('large video crosses real HTTP/MCP gateway and local CDP input without soci
   await mcp.initialize();
   const mcpRejected = await mcp.callTool('pc_browser_upload_file', { url: VIDEO_URL, selector: '#video' });
   assert.equal(mcpRejected.isError, true);
-  const parsed = JSON.parse(mcpRejected.content[0].text);
+  const parsed = JSON.parse(mcpRejected.text);
   assert.equal(parsed.code, reject.body.code);
   assert.equal(parsed.limitBytes, reject.body.limitBytes);
   assert.equal(parsed.fileSizeBytes, reject.body.fileSizeBytes);
@@ -94,3 +94,4 @@ test('large video crosses real HTTP/MCP gateway and local CDP input without soci
   if (baselineRss) assert.ok(peakRss - baselineRss < 128 * 1024 * 1024, `Unexpected whole-video memory growth: ${peakRss - baselineRss}`);
   t.diagnostic(JSON.stringify({ bytes: result.body.bytes, sha256: result.body.sha256, inputType: readback.body.result.type, networkRequests: 0, baselineRss, peakRss, fileRemovedAfterTest: true }));
 });
+
