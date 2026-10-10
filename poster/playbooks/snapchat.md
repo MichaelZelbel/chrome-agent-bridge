@@ -78,6 +78,22 @@ rejection. The precise missing organization or billing field was not established
 that payment is required, sign up for a business account, or change billing to fix it without
 explicit permission. Report the exact refusal and retain the post for account setup review.
 
+Setup review, 2026-10-11: the current Open a Business Account button opens an
+"Open a Business Account on Snap" modal. It explicitly creates a business account for ads,
+with Confirm Business Name, Confirm Business email address, Add country, Add currency and
+Phone number fields, a "Connect this Profile to your new Ad Account" checkbox, and optional
+promotional-call/SMS consent. Its Create a Business button accepts the Terms of Service and
+Business Services Terms on the business's behalf. This is an account-creation/terms approval
+boundary, not a verified address-only edit. Nothing was entered or submitted during review.
+The defaults shown were United States and USD; never assume they match the person.
+
+The consumer https://www.snapchat.com/spotlight feed had no upload/create control, and its
+Log In link led to Web chat. Web chat loaded the existing account without new credentials,
+but returning to the consumer Spotlight feed still showed Log In and no uploader. No
+alternate publisher was verified. The current official web-upload instructions at
+https://help.snapchat.com/hc/en-us/articles/7012293789972-How-do-I-submit-a-Snap-to-Spotlight-from-the-web
+direct users to profile.snapchat.com, the same profile-manager route used here.
+
 ## 6. Read the URL back
 
 None at once. Report `posted` with no `post_url` and `error` "Spotlight shows the video only
