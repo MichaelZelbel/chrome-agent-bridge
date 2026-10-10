@@ -97,6 +97,20 @@ that payload and has no client spend-readiness check. An Apollo rejection reache
 error handler before its separate save-to-profile call. The exact missing backend condition
 remains UNKNOWN; the service name and refusal do not establish a business or billing repair.
 
+Billing navigation was also checked on 2026-10-11. The current no-ad-account navigation
+configuration explicitly disables Billing & Payments for PROVISIONAL_ORGANIZATION; the
+root navigation applies that attribute from the selected organization type. Its target is
+business.snapchat.com, `/:organizationId/settings/payment-methods`. This explains the observed
+menu dismissal without navigation. Create Ads is separately disabled with its business/ad
+account tooltip. Shared code contains a business-details/address route helper, but the
+current navigation offers no Business Details target and no personal-account address-edit
+form was verified. A read-only visit to that sourced address route then redirected to
+accounts.snapchat.com/v2/login, with an ads-api continuation and the address route as
+referrer. No credentials or account changes followed. Form availability remains UNVERIFIED
+at that business-surface login boundary, not proven unavailable to every account. An
+address-only repair remains UNVERIFIED. Do not bypass disabled navigation or infer a
+supported repair from a shared route helper or another user's report.
+
 Historical setup inspection, 2026-10-11: the Open a Business Account button opened an
 "Open a Business Account on Snap" modal. It explicitly creates a business account for ads,
 with Confirm Business Name, Confirm Business email address, Add country, Add currency and
