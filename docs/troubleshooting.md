@@ -91,6 +91,16 @@ on its own, usually within a few seconds — no manual step needed.
   disabled unless both are set, so nothing is ever killed unexpectedly).
 - Tunables: `CAB_WATCHDOG_COOLDOWN_MS` (default 20000) throttles relaunch
   attempts; `CAB_CHROME_EXTRA_ARGS` appends extra Chrome flags to the relaunch.
+- A relaunch uses the launcher's own flags: `--no-first-run` everywhere, and
+  `--password-store=basic` on Linux. Without them a relaunched Chrome on an
+  unattended Linux login waited for a keyring or a first-run window and never
+  opened its debug port, so the bridge stayed down.
+- `/health` asks Chrome's debug endpoint itself, not the gateway's cached
+  connection, so it no longer answers `ok` while every `/goto` fails with
+  `Target page, context or browser has been closed`. A health poll that finds
+  the endpoint gone reconnects, and with the watchdog relaunches Chrome.
+- A crashed bridge page (the tab's renderer ran out of memory, `Page crashed`)
+  is replaced by a new page on the next `/goto` instead of being reused.
 
 Fix (if the watchdog is disabled, e.g. you launch Chrome by hand): close all
 Chrome windows for the bridge profile, confirm none remain (`Get-Process

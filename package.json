@@ -7,7 +7,7 @@
     "start": "node gateway/index.js",
     "dev": "node gateway/index.js",
     "test": "node --test \"test/**/*.test.mjs\" \"poster/test/**/*.test.mjs\"",
-    "test:unit": "node --test test/transfer.test.mjs test/upload-and-auth.test.mjs test/screenshot-options.test.mjs poster/test/wake.test.mjs"
+    "test:unit": "node --test test/transfer.test.mjs test/upload-and-auth.test.mjs test/screenshot-options.test.mjs test/recover.test.mjs poster/test/wake.test.mjs"
   },
   "keywords": [
     "chrome",

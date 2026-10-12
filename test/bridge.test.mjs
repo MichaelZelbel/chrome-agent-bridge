@@ -460,6 +460,37 @@ test('MCP pc_browser_screenshot passes full and selector through and reports the
 });
 
 // ---------------------------------------------------------------------------
+// 5b. A crashed bridge page is replaced. A crashed page is not "closed", so
+//     the gateway used to hand it out again and every /goto failed with
+//     "Page crashed" until someone restarted it (a Linux host, 2026-10-09).
+// ---------------------------------------------------------------------------
+test('a crashed bridge page is replaced: the next /goto works', async () => {
+  const goto = await api('POST', '/goto', { url: HARNESS_URL });
+  assert.equal(goto.status, 200, goto.text);
+
+  // Crash the renderer behind the bridge page from a second CDP connection.
+  const { chromium } = await import('playwright');
+  const outside = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`);
+  try {
+    const page = outside.contexts()[0].pages().find((p) => p.url() === HARNESS_URL);
+    assert.ok(page, 'the bridge page is open on the harness');
+    const session = await page.context().newCDPSession(page);
+    const crashed = new Promise((resolve) => page.once('crash', resolve));
+    // Page.crash never answers (the renderer is gone), so it is not awaited.
+    session.send('Page.crash').catch(() => {});
+    await Promise.race([crashed, new Promise((_, reject) => setTimeout(() => reject(new Error('the page did not crash')), 15000))]);
+  } finally {
+    // Only the test's own connection: the browser stays up.
+    await outside.close().catch(() => {});
+  }
+
+  const again = await api('POST', '/goto', { url: HARNESS_URL });
+  assert.equal(again.status, 200, again.text);
+  assert.equal(again.json.success, true);
+  assert.equal(await evalMain('location.pathname'), '/outer.html');
+});
+
+// ---------------------------------------------------------------------------
 // 6. Watchdog: the gateway self-heals when Chrome's CDP endpoint disappears
 //    (crash / closed / relaunched-without-flags after a background update).
 //    Kept LAST because it kills and relaunches the shared Chrome.

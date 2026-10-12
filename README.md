@@ -416,7 +416,7 @@ All env vars are optional:
 | `CDP_URL` | `http://127.0.0.1:9222`  | Where the gateway connects to Chrome. Keep local.  |
 | `CAB_CHROME_BIN` | _(unset)_         | Chrome binary path. Set by the launcher; enables the relaunch watchdog. |
 | `CAB_PROFILE_DIR` | _(unset)_        | Dedicated Chrome profile dir. Set by the launcher; the watchdog kill/relaunch is scoped to it. |
-| `CAB_CHROME_EXTRA_ARGS` | _(empty)_  | Extra Chrome flags appended when the watchdog relaunches Chrome. |
+| `CAB_CHROME_EXTRA_ARGS` | _(empty)_  | Extra Chrome flags appended when the watchdog relaunches Chrome (on top of `--no-first-run`, and `--password-store=basic` on Linux, which a relaunch always uses). |
 | `CAB_WATCHDOG_COOLDOWN_MS` | `20000` | Minimum gap between watchdog relaunch attempts.   |
 
 The watchdog activates only when **both** `CAB_CHROME_BIN` and `CAB_PROFILE_DIR`

@@ -13,6 +13,7 @@ upload.cleanOldTemp();
 setInterval(() => upload.cleanOldTemp(), 60000).unref();
 const shot = require('./lib/screenshot');
 const { readToken, makeTokenGuard } = require('./lib/auth');
+const { relaunchArgs, isCrashError, isClosedError, cdpAnswers } = require('./lib/recover');
 
 const execFileAsync = promisify(execFile);
 
@@ -73,13 +74,9 @@ async function killChromeOnProfile() {
 }
 
 function spawnChrome(port, address) {
-  const args = [
-    `--remote-debugging-port=${port}`,
-    `--remote-debugging-address=${address}`,
-    '--disable-component-update',
-    `--user-data-dir=${WATCHDOG_PROFILE_DIR}`,
-    ...WATCHDOG_EXTRA_ARGS,
-  ];
+  const args = relaunchArgs({
+    port, address, profileDir: WATCHDOG_PROFILE_DIR, extraArgs: WATCHDOG_EXTRA_ARGS, platform: process.platform,
+  });
   const child = spawn(WATCHDOG_CHROME_BIN, args, { detached: true, stdio: 'ignore' });
   child.on('error', (e) => console.error(`${new Date().toISOString()} [watchdog] Chrome spawn failed: ${e.message}`));
   child.unref();
@@ -211,16 +208,35 @@ async function connectWithWatchdog() {
   }
 }
 
-async function getContext() {
+// Forget the cached connection and bridge page, so the next getContext()
+// connects afresh -- and, when Chrome's debug port is gone, lets the watchdog
+// relaunch Chrome. The old handle is dropped, never closed: closing it could
+// take the real Chrome session down with it.
+function dropConnection(why) {
+  if (why) logLine(`[recover] ${why}; reconnecting to Chrome`);
+  cdpBrowser = null;
+  bridgePage = null;
+}
+
+// { verify: true } also asks Chrome's debug endpoint whether it is still
+// there. A cached handle can say "connected" long after Chrome lost its debug
+// port (lib/recover.js, case 2), so /health and every recovery path verify.
+async function getContext({ verify = false } = {}) {
+  if (cdpBrowser && verify && !(await cdpAnswers(CDP_URL))) {
+    dropConnection(`CDP ${CDP_URL} stopped answering behind a cached connection`);
+  }
   if (!cdpBrowser || !cdpBrowser.isConnected()) {
     cdpBrowser = null;
     const browser = await connectWithWatchdog();
     // If Chrome quits or the connection drops, discard the cached handle (and
     // the now-stale bridge page) so the next request transparently reconnects
-    // (and, with the watchdog, can relaunch Chrome).
+    // (and, with the watchdog, can relaunch Chrome). Only this browser's own
+    // handle: a late event from an old connection must not drop a new one.
     browser.on('disconnected', () => {
-      cdpBrowser = null;
-      bridgePage = null;
+      if (cdpBrowser === browser) {
+        cdpBrowser = null;
+        bridgePage = null;
+      }
     });
     cdpBrowser = browser;
   }
@@ -231,8 +247,32 @@ async function getContext() {
   return context;
 }
 
+// Pages whose renderer died. Playwright keeps a crashed page "open", so
+// isClosed() alone would hand it out again forever (lib/recover.js, case 1).
+const crashedPages = new WeakSet();
+// Pages the bridge opened itself; only these are closed when they crash. A tab
+// adopted through /tab belongs to the user and is only let go of.
+const ownPages = new WeakSet();
+const watchedPages = new WeakSet();
+
+function adoptPage(page, own) {
+  page.setDefaultTimeout(15000);
+  if (own) ownPages.add(page);
+  if (watchedPages.has(page)) return page;
+  watchedPages.add(page);
+  page.on('crash', () => {
+    crashedPages.add(page);
+    logLine(`[recover] the bridge page crashed (${page.url()}); the next /goto opens a new one`);
+  });
+  return page;
+}
+
+function usable(page) {
+  return !!page && !page.isClosed() && !crashedPages.has(page);
+}
+
 async function getBridgePage() {
-  if (bridgePage && !bridgePage.isClosed()) return bridgePage;
+  if (usable(bridgePage)) return bridgePage;
   return null;
 }
 
@@ -247,20 +287,38 @@ function resolveFrame(page, frame) {
   return page.frames().find((f) => f.url().includes(frame)) || page.mainFrame();
 }
 
-async function newBridgePage(url) {
-  const context = await getContext();
-  // Reuse the existing bridge page if it's still alive -- this navigates
-  // in place and avoids creating a new tab. Creating a new tab each /goto
-  // pops the Chrome window to front on Windows/macOS and steals keyboard
-  // focus from whatever the user is currently typing in. Only create a
-  // new tab on the very first /goto after the gateway starts (or after
-  // the user manually closes the bridge tab).
-  if (!bridgePage || bridgePage.isClosed()) {
-    bridgePage = await context.newPage();
-    bridgePage.setDefaultTimeout(15000);
+async function newBridgePage(url, { retried = false } = {}) {
+  try {
+    const context = await getContext({ verify: retried });
+    // Reuse the existing bridge page if it's still alive -- this navigates
+    // in place and avoids creating a new tab. Creating a new tab each /goto
+    // pops the Chrome window to front on Windows/macOS and steals keyboard
+    // focus from whatever the user is currently typing in. Only create a
+    // new tab on the very first /goto after the gateway starts (or after
+    // the user manually closes the bridge tab, or the page crashed).
+    if (!usable(bridgePage)) {
+      const dead = bridgePage;
+      bridgePage = null;
+      if (dead && ownPages.has(dead) && !dead.isClosed()) await dead.close().catch(() => {});
+      bridgePage = adoptPage(await context.newPage(), true);
+    }
+    await bridgePage.goto(url, { waitUntil: 'domcontentloaded' });
+    return bridgePage;
+  } catch (err) {
+    // One second chance, for the two failures a fresh page or a fresh
+    // connection cures. Anything else (a timeout, a bad URL) is the caller's.
+    if (retried) throw err;
+    if (isCrashError(err)) {
+      if (bridgePage) crashedPages.add(bridgePage);
+      logLine('[recover] /goto found the bridge page crashed; opening a new page');
+      return newBridgePage(url, { retried: true });
+    }
+    if (isClosedError(err)) {
+      dropConnection(`/goto failed: ${err.message.split('\n')[0]}`);
+      return newBridgePage(url, { retried: true });
+    }
+    throw err;
   }
-  await bridgePage.goto(url, { waitUntil: 'domcontentloaded' });
-  return bridgePage;
 }
 
 const NO_PAGE_ERR = { error: 'No bridge page open yet. Call POST /goto first.' };
@@ -269,7 +327,10 @@ app.get('/capabilities', (_req, res) => res.json(transfer.capabilities()));
 
 app.get('/health', async (req, res) => {
   try {
-    await getContext();
+    // Verified: "ok" means Chrome's debug endpoint answers now, not that a
+    // cached handle once did. A dead endpoint is reconnected (and, with the
+    // watchdog, Chrome relaunched) on the spot, so a health poll heals it.
+    await getContext({ verify: true });
     res.json({ status: 'ok' });
   } catch (err) {
     res.status(500).json({ status: 'error', error: err.message });
@@ -656,8 +717,7 @@ app.post('/tab', async (req, res) => {
       });
     }
 
-    bridgePage = target;
-    bridgePage.setDefaultTimeout(15000);
+    bridgePage = adoptPage(target, false);
     await target.bringToFront().catch(() => {});
     res.json({ success: true, url: target.url() });
   } catch (err) {
