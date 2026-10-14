@@ -74,19 +74,24 @@ keystrokes: `pc_browser_type` (bridge `POST /type` with a CSS `selector`) or cli
    timing), Scan for AI text (ignore), `button "Cancel"`, `button "Send to everyone now"`.
 2. `button "Send to everyone now"` publishes and emails. The button turns into
    `button "Loading Publishing..."` for a few seconds.
-3. The page then goes to `/publish/posts/detail/<id>/share-center`, NOT to the post. It holds
-   one link `https://<publication>.substack.com/p/<slug>`: that is the live URL.
+3. The page then goes to `/publish/posts/detail/<id>/share-center`, NOT to the post. It shows
+   "Published at <time>" and a "View post" control, but since 2026-10-14 no `/p/` link.
 
 ## 5. Read the URL back
 
-The `a[href*="/p/"]` link on the share center after step 4.3 (`pc_browser_eval`), or the
-Published list in step 2. Open it and check the title, the date and the last paragraph before
-reporting that URL.
+The public archive: `GET https://<publication>.substack.com/api/v1/archive?sort=new&limit=2`
+(plain HTTP, no browser needed). The entry whose `id` equals the draft id from
+`/publish/post/<id>` carries `canonical_url`, the live URL. Older pages may still show an
+`a[href*="/p/"]` link on the share center; use it if present. Open the URL and check the title
+(the SECOND `h1`; the first is the publication name), the date and the last paragraph before
+reporting it.
 
 ## 6. Cost baseline
 
 2026-09-28, first run: 51 tool calls, 223 seconds, 1.04 USD, Claude Opus in Claude Code
 (typing the body; pasting should cut both).
+2026-10-14, job f7cf93c9: about 15 bridge and API calls, about 5 minutes, Claude Opus in
+Claude Code over the bridge's HTTP API (body pasted).
 
 ## Bridge notes
 
@@ -110,3 +115,9 @@ it is too big to pass inline, so send the report through the poster API
 - 2026-09-28, the person: "stick to what I put into Planino". The line "no image on Substack" was
   itself a taste decision and is gone. The rule is now the payload, exactly; Planino's side was
   fixed so the payload no longer carries a thumbnail the post's card hides.
+- 2026-10-14, job f7cf93c9 ("My AI Can Make Phone Calls Now. I Won't Use It."): the share
+  center no longer holds the `/p/` link; the live URL now comes from the public archive API
+  (section 5). The live page has two `h1`s, publication name first. The claim now carries
+  `publish_destination.account_id` (`https://michaelzelbel.substack.com`); the dashboard
+  address and the byline confirm it before publishing. Paste, video embed and the Publish
+  dialog matched the playbook exactly.
