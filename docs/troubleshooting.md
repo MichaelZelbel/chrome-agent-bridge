@@ -58,6 +58,25 @@ Fix:
 
 ---
 
+## Every `/goto` answers "Page crashed" while `/health` says ok
+
+Symptom: `/health` answers `{"status":"ok"}`, but every `/goto` fails at
+once with `page.goto: Page crashed`, for hours, until someone restarts the
+gateway. Often it starts after the page got slower and slower (timeouts),
+because the machine or the tab ran short of memory.
+
+Cause: the tab's renderer crashed. Playwright keeps a crashed page "open",
+and gateways before 0.6.0 kept handing that dead page out on every request.
+
+Fix: update to 0.6.0 or newer, which opens a fresh page after a crash, and
+restart the gateway. With several agents on one machine, restart every one
+of them (see [`multi-agent.md`](multi-agent.md)): an agent you did not
+restart still runs the old code. `GET /capabilities` shows the version each
+gateway is running. Logins survive the restart, because they live in the
+Chrome profile.
+
+---
+
 ## Chrome updated and the bridge lost its connection
 
 Symptom: everything worked, then after a while `/goto` (and friends) start

@@ -103,6 +103,11 @@ port 3007 are not touched.
   16 GB is comfortable; more starts to hurt -- check Task Manager.
 - If you share one PC IP across several agents on Tailscale, you can use
   Tailscale ACLs to control which tailnet members can reach which port.
+- **After updating the bridge, restart every agent, not just one.** All
+  agents share one install, but each gateway runs the code it started
+  with, so an agent you did not restart keeps the old code, old bugs
+  included. `GET /capabilities` on each gateway port shows the version that
+  agent is actually running; they should all match `package.json`.
 - The first time you double-click `add-agent.bat`, Windows may show
   "Windows protected your PC" (SmartScreen) because the script isn't
   signed. Click *More info* -> *Run anyway*. Same as `setup.bat`.
