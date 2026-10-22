@@ -56,10 +56,20 @@ keystrokes: `pc_browser_type` (bridge `POST /type` with a CSS `selector`) or cli
   line must come back as `DIV:youtube-wrap`, the paragraphs as `P`. Verified 2026-09-28 on a
   scratch draft (deleted). Do not type Markdown symbols; `**` would show as characters.
   Substack curls straight quotes; that is expected.
+  **`post_text` with Markdown links or `> ` quote lines:** a plain-text paste leaves the
+  brackets and `>` as characters. Put the same text on the paste as `text/html` as well
+  (`dt.setData('text/html', HTML)` beside the `text/plain`): each blank-line paragraph a `<p>`,
+  `[label](url)` an `<a href>`, a `> ` paragraph a `<blockquote><p>`. Same words, only the
+  Markdown made real. Verified 2026-10-22 (job 4d12d29b): links and quote came back right.
+  When the body already holds an image, put the caret in the last (empty) `P` before the paste
+  so the text lands below the picture.
 - **Media: exactly what the payload holds, nothing added, nothing dropped.** The payload is
   what the post's card in Planino shows (since 2026-09-28 Planino leaves out a thumbnail the
   card does not show). `media_url` set: put that file at the top of the post, a picture with
-  `button "Insert image"` (it opens a MENU; `menuitem "Image"` is the file chooser), a video
+  `button "Insert image"` (it opens a MENU; `menuitem "Image"` is the file chooser; verified
+  2026-10-22: click `.ProseMirror`, click `Insert image`, then `POST /upload-file
+  {url: media_url, click: {role: "menuitem", name: "Image"}, filename}`; the body then holds
+  `DIV:captioned-image-container` and an empty `P`. Do the image BEFORE pasting the text), a video
   with `button "Insert video"` (UNVERIFIED: first run to do it corrects this line).
   `media_url` empty: no picture, no video. `thumbnail_url` set: the settings panel's Thumbnail
   "Upload" (the social card), never into the body. Never decide on taste that a file does not
@@ -82,7 +92,11 @@ keystrokes: `pc_browser_type` (bridge `POST /type` with a CSS `selector`) or cli
 The public archive: `GET https://<publication>.substack.com/api/v1/archive?sort=new&limit=2`
 (plain HTTP, no browser needed). The entry whose `id` equals the draft id from
 `/publish/post/<id>` carries `canonical_url`, the live URL. Older pages may still show an
-`a[href*="/p/"]` link on the share center; use it if present. Open the URL and check the title
+`a[href*="/p/"]` link on the share center; use it if present. The archive can lag a minute or
+more after publishing (2026-10-22: still missing after 30 seconds). Then ask Substack from the
+signed-in editor page: `pc_browser_eval` of `fetch("/api/v1/drafts/<id>").then(r=>r.json())`
+gives `slug`, `is_published` and `post_date`; the URL is
+`https://<publication>.substack.com/p/<slug>`. Open the URL and check the title
 (the SECOND `h1`; the first is the publication name), the date and the last paragraph before
 reporting it.
 
@@ -121,3 +135,7 @@ it is too big to pass inline, so send the report through the poster API
   `publish_destination.account_id` (`https://michaelzelbel.substack.com`); the dashboard
   address and the byline confirm it before publishing. Paste, video embed and the Publish
   dialog matched the playbook exactly.
+- 2026-10-22, job 4d12d29b ("Sorry, little guy. This hole is closed."): first image post.
+  Image upload through the Insert image menu verified (section 3). The body carried Markdown
+  links and a `> ` quote line, so it is now pasted as HTML too. The public archive lagged after
+  publishing; the drafts API gives the slug (section 5). About 22 calls, 5 minutes.
