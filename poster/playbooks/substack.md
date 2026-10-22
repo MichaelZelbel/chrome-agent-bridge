@@ -3,9 +3,16 @@
 Status: **verified 2026-09-28** end to end by the first real post (job 022018d1, "My AI Spent
 75 Days on SAP Customer Support") in a dedicated posting profile.
 
-Publication: `<publication>` below is `$SUBSTACK_PUBLICATION` from poster.env (`yourname` for
-`yourname.substack.com`). Not set: open `https://substack.com/home` once, follow the profile
-menu to the Dashboard, and read the subdomain from the address bar.
+Publication: `<publication>` below is the subdomain of the claim's
+`publish_destination.account_id` (`https://yourname.substack.com` gives `yourname`). One
+person can have several publications (Michael: `michaelzelbel` in English,
+`michaelzelbeldeutsch` in German), so the claim wins over `$SUBSTACK_PUBLICATION` from
+poster.env, which is only the fallback when the claim carries no destination.
+
+UI language follows the publication. On a German one the controls are: `textbox "title"`
+(placeholder "Titel"), `textbox "Einen Untertitel hinzufügen …"`, body `textbox "Hier tippen …"`,
+`button "Bild einfügen"` → `menuitem "Bild"`, `button "Weiter"`, `dialog "Veröffentlichen"`,
+`button "Jetzt an alle senden"`. Same structure, same steps.
 
 Payload fields used: `headline` (title), `email_preview` (subtitle), `post_text` (body),
 `email_subject` (only when it differs from the title; Substack uses the title as the subject by
@@ -25,6 +32,9 @@ Open `https://<publication>.substack.com/publish/posts` (the dashboard's Posts t
 the payload's title in the Published list from the last hour means an earlier attempt landed:
 open it, read its URL from the address bar, report `posted` with that URL, stop. The Drafts list
 may hold a half-finished draft from a dead attempt; reuse it rather than making a second one.
+Without clicking through tabs, from any signed-in page of the publication: `pc_browser_eval`
+of `fetch("/api/v1/post_management/drafts?offset=0&limit=10&order_by=draft_updated_at&order_direction=desc")`
+(both order parameters are required) lists drafts as `posts[]` with `id` and `draft_title`.
 
 ## 3. Controls
 
@@ -139,3 +149,7 @@ it is too big to pass inline, so send the report through the poster API
   Image upload through the Insert image menu verified (section 3). The body carried Markdown
   links and a `> ` quote line, so it is now pasted as HTML too. The public archive lagged after
   publishing; the drafts API gives the slug (section 5). About 22 calls, 5 minutes.
+- 2026-10-22, job 8528d1cb ("Tut mir leid, Kleiner. Das Loch ist zu."): first post to the
+  German publication `michaelzelbeldeutsch`. The publication now comes from the claim's
+  destination; the German control names are listed at the top. Drafts API parameters added
+  (section 2). Image, HTML paste and drafts-API URL readback all matched. 13 calls, under 2 minutes.
