@@ -8,6 +8,8 @@ Made by Michael Zelbel as part of [Godspeed Mission Control](https://github.com/
 
 Want to hear when the bridge learns new tricks? [Subscribe to the newsletter](https://michaelzelbel.substack.com).
 
+Running OpenClaw or Hermes on a server? The free DevOps kits set this bridge up for you, with a watchdog that restarts your agent when it goes down: [OpenClaw DevOps Kit](https://ko-fi.com/s/8752f1ccc7) and [Hermes DevOps Kit](https://ko-fi.com/s/29efd32495), both free on Ko-fi.
+
 A small HTTP gateway that runs on **Windows, macOS, or Linux** and exposes
 a handful of safe browser actions to remote AI agents. The agents drive a
 real Chrome window — with your real, persistent logins — so they can use
