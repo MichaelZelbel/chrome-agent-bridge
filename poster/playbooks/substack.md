@@ -71,6 +71,11 @@ keystrokes: `pc_browser_type` (bridge `POST /type` with a CSS `selector`) or cli
   (`dt.setData('text/html', HTML)` beside the `text/plain`): each blank-line paragraph a `<p>`,
   `[label](url)` an `<a href>`, a `> ` paragraph a `<blockquote><p>`. Same words, only the
   Markdown made real. Verified 2026-10-22 (job 4d12d29b): links and quote came back right.
+  A bare URL in a plain-text paste stays plain text on the live post (the 2026-10-14 post's two
+  GitHub URLs cannot be clicked), so a link people should click is written as `[label](url)`. A
+  YouTube URL on its own line is the exception: it becomes the player, also when the paste
+  carries HTML. Verified 2026-11-05 on a scratch draft (deleted): `DIV:youtube-wrap` with
+  `videoId` exactly as written (`-_QXYL30wS4`), and the Markdown link came back as an `<a href>`.
   When the body already holds an image, put the caret in the last (empty) `P` before the paste
   so the text lands below the picture.
 - **Media: exactly what the payload holds, nothing added, nothing dropped.** The payload is
@@ -153,3 +158,8 @@ it is too big to pass inline, so send the report through the poster API
   German publication `michaelzelbeldeutsch`. The publication now comes from the claim's
   destination; the German control names are listed at the top. Drafts API parameters added
   (section 2). Image, HTML paste and drafts-API URL readback all matched. 13 calls, under 2 minutes.
+- 2026-11-05, scratch draft before the interstitial journaling post (Planino 74): a bare URL in a
+  plain-text paste stays plain text on the live post, so a link people should click is written as
+  `[label](url)`. A YouTube URL on its own line is the exception: it becomes the player, also when
+  the paste carries HTML (section 3). The draft was deleted
+  through `DELETE /api/v1/drafts/<id>` from a signed-in page (answered 200, gone from the drafts list).
