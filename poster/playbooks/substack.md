@@ -163,3 +163,7 @@ it is too big to pass inline, so send the report through the poster API
   `[label](url)`. A YouTube URL on its own line is the exception: it becomes the player, also when
   the paste carries HTML (section 3). The draft was deleted
   through `DELETE /api/v1/drafts/<id>` from a signed-in page (answered 200, gone from the drafts list).
+- 2026-11-05, job 2e03b076 ("Mind the Gap: Mindfulness for People Who Never Meditate"): a body
+  with both a YouTube line and a Markdown link, pasted as `text/plain` plus `text/html`: the
+  YouTube line still came back as `DIV:youtube-wrap` and the link as a real `<a>`, so the HTML
+  paste is safe for video posts too. Everything else matched. About 11 calls, 2 minutes.
